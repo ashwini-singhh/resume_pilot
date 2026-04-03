@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv/
+env/
+venv/
+ENV/
+*.db
+backend/backend_log.txt
+frontend/dev_log*.txt
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+.env*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
