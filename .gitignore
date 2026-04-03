@@ -22,5 +22,11 @@ build/
 .DS_Store
 Thumbs.db
 
-# Misc
+# Agents & Dev Logs
+AGENTS.md
+dev_log*.txt
+backend_log.txt
+task.md
+implementation_plan.md
+walkthrough.md
 *.log
