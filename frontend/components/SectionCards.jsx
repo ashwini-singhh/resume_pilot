@@ -139,6 +139,15 @@ export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, o
             <label className="form-label">Role Title</label>
             <input type="text" value={exp.title} onChange={e => handleEntryChange(idx, 'title', e.target.value)} style={{marginBottom: '16px'}} />
 
+            <label className="form-label">Role Highlights (One per line)</label>
+            <textarea 
+              rows="3" 
+              placeholder="Summary of responsibilities or key achievements..."
+              value={(exp.bullets || []).join('\n')} 
+              onChange={e => handleEntryChange(idx, 'bullets', e.target.value)}
+              style={{fontSize: '13px', marginBottom: '16px'}}
+            />
+
             <div style={{paddingLeft: '16px', borderLeft: '2px dashed var(--border)', marginLeft: '8px'}}>
                <p style={{fontSize: '11px', fontWeight: 700, color: 'var(--muted-foreground)', marginBottom: '8px', textTransform: 'uppercase'}}>Nested Projects</p>
                {(exp.projects || []).map((proj, pIdx) => (
@@ -239,12 +248,35 @@ export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, o
               onImprove={() => setImprovingEntry({ entry: exp, entryId: eid, idx, isNestedProject: false })}
             />
 
+            {/* Top-level bullets (Role highlights) */}
+            {exp.bullets && exp.bullets.length > 0 && (
+              <ul style={{margin: '8px 0', paddingLeft: '8px', listStyle: 'none', fontSize: '13px'}}>
+                {exp.bullets.map((b, bIdx) => (
+                  <li key={bIdx} style={{display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '4px'}}>
+                    <span style={{color: 'var(--accent)', marginTop: '2px', flexShrink: 0}}>•</span>
+                    <span style={{flex: 1, color: 'var(--foreground)'}}>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
             {exp.projects?.map((proj, pIdx) => {
               const pid = `${eid}_proj_${pIdx}`;
               return (
-                <div key={pIdx} style={{marginLeft: '16px', marginTop: '12px', borderLeft: '2px solid var(--border)', paddingLeft: '12px'}}>
+                <div key={pIdx} style={{
+                  marginLeft: '12px', 
+                  marginTop: '16px', 
+                  borderLeft: '2px solid var(--accent)', 
+                  paddingLeft: '16px',
+                  background: 'rgba(0,82,255,0.02)',
+                  paddingTop: '10px',
+                  paddingBottom: '10px',
+                  borderRadius: '0 8px 8px 0'
+                }}>
                   <div className="flex-between">
-                    <div style={{fontWeight: 600, fontSize: '12px', color: 'var(--accent)'}}>{proj.name}</div>
+                    <div style={{fontWeight: 700, fontSize: '13px', color: 'var(--foreground)', marginBottom: '4px'}}>
+                      {proj.name}
+                    </div>
                   </div>
                   
                   {/* Impact Score Badge for nested Project */}
@@ -256,11 +288,11 @@ export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, o
                     onImprove={() => setImprovingEntry({ entry: proj, entryId: pid, idx, pIdx, isNestedProject: true })}
                   />
 
-                  <ul style={{margin: '6px 0', paddingLeft: '8px', listStyle: 'none', fontSize: '12px'}}>
+                  <ul style={{margin: '8px 0 0 0', paddingLeft: '4px', listStyle: 'none', fontSize: '12px'}}>
                     {proj.bullets?.map((pb, pbIdx) => (
-                      <li key={pbIdx} style={{display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '3px'}}>
+                      <li key={pbIdx} style={{display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '4px'}}>
                         <span style={{color: 'var(--accent)', marginTop: '2px', flexShrink: 0}}>›</span>
-                        <span style={{flex: 1, color: 'var(--foreground)'}}>{pb}</span>
+                        <span style={{flex: 1, color: 'var(--foreground)', fontStyle: 'italic'}}>{pb}</span>
                       </li>
                     ))}
                   </ul>

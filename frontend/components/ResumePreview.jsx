@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpdateProfile }) {
   const [fontFam, setFontFam] = useState("Inter (Modern)");
   const [fontSz, setFontSz] = useState(11);
+  const [lineHt, setLineHt] = useState(1.6);
   const [fitPage, setFitPage] = useState(false);
   const [dragOverIdx, setDragOverIdx] = useState(null);
 
@@ -73,12 +74,24 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
           style={{width: '100%', marginBottom: '24px'}}
         />
 
+        <div className="flex-between" style={{marginBottom: '16px'}}>
+          <label className="form-label">Line Spacing</label>
+          <span style={{fontSize: '12px'}}>{lineHt}</span>
+        </div>
+        <input 
+          type="range" 
+          min="1" max="2.5" step="0.1"
+          value={lineHt} 
+          onChange={e => setLineHt(Number(e.target.value))} 
+          style={{width: '100%', marginBottom: '24px'}}
+        />
+
         <label style={{display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '24px'}}>
           <input type="checkbox" checked={fitPage} onChange={e => setFitPage(e.target.checked)} style={{width: 'auto', marginBottom: 0}} />
           Fit to one page
         </label>
 
-        <button className="btn" style={{width: '100%'}} onClick={() => { setFontFam("Inter (Modern)"); setFontSz(11); }}>
+        <button className="btn" style={{width: '100%'}} onClick={() => { setFontFam("Inter (Modern)"); setFontSz(11); setLineHt(1.6); setFitPage(false); }}>
           <span className="mat-icon">undo</span> Reset defaults
         </button>
 
@@ -165,7 +178,11 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
 
         <div style={{borderBottom: '1px solid var(--border)', margin: '24px 0'}}></div>
         
-        <button className="btn btn-primary" style={{width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'}} onClick={onOpenUpload}>
+        <button className="btn btn-primary" style={{width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'}} onClick={() => {
+          const count = Number(localStorage.getItem('usage_count') || 0);
+          if (count >= 5) return alert("Monthly import limit reached! Take Premium to work on more resumes.");
+          onOpenUpload();
+        }}>
           <span className="mat-icon">auto_awesome</span> Upload & Parse
         </button>
       </div>
@@ -176,8 +193,15 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
             <h2 style={{color: 'white', margin: 0}}>Resume Preview</h2>
             <div className="flex-row gap-2">
               <button className="btn" onClick={onEditTab}><span className="mat-icon">edit</span> Edit</button>
-              <button className="btn"><span className="mat-icon">save</span> Save</button>
-              <button className="btn btn-danger"><span className="mat-icon">download</span> Export PDF</button>
+              <button className="btn" onClick={() => alert("Cloud Sync: coming soon")}><span className="mat-icon">save</span> Save</button>
+              <button className="btn btn-danger" onClick={() => {
+                const count = Number(localStorage.getItem('usage_count') || 0);
+                if (count >= 5) return alert("Monthly export limit reached! Take Premium to work on more resumes.");
+                localStorage.setItem('usage_count', (count + 1).toString());
+                window.print();
+              }}>
+                <span className="mat-icon">download</span> Export PDF
+              </button>
             </div>
         </div>
 
@@ -187,7 +211,7 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
         </div>
 
         <div className="resume-doc-container" style={{transformOrigin: 'top center'}}>
-          <div className="resume-doc animate-in" style={{fontFamily: ff}}>
+          <div className={`resume-doc animate-in ${fitPage ? 'fit-one-page' : ''}`} style={{fontFamily: ff, lineHeight: lineHt}}>
             <div className="r-name" style={{fontSize: `${32*scale}px`}}>{profile.name || 'JOHN DOE'}</div>
             <div className="r-contact" style={{fontSize: `${12*scale}px`}}>
               {profile.email || 'johndoe@email.com'} | {profile.phone || '555-5555'} | {profile.location || 'New York, NY'}
@@ -221,6 +245,12 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                              <span>{e.period}</span>
                            </div>
                            <div className="r-entry-sub" style={{fontSize: `${13*scale}px`}}>{e.title}</div>
+                           
+                           {/* Render role-level bullets (Highlights) */}
+                           {!isHidden && e.bullets?.map((b, bIdx) => (
+                             <div key={bIdx} className="r-bullet" style={{fontSize: `${12*scale}px`}}>{b}</div>
+                           ))}
+
                            {!isHidden && (e.projects || []).map((proj, pIdx) => {
                              const pid = `${eid}_proj_${pIdx}`;
                              const isHiddenProj = (profile.hidden_entries || []).includes(pid);
@@ -239,7 +269,7 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                                  </button>
                                  <div style={{fontSize: `${13*scale}px`, fontWeight: 600, fontStyle: 'italic', color: '#4b5563'}}>{proj.name}</div>
                                  {!isHiddenProj && proj.bullets?.map((pb, pbIdx) => (
-                                   <div key={pbIdx} className="r-bullet" style={{fontSize: `${12*scale}px`}}>{pb}</div>
+                                   <div key={pbIdx} className="r-bullet" style={{fontSize: `${12*scale}px`, marginLeft: '12px'}}>{pb}</div>
                                  ))}
                                </div>
                              );

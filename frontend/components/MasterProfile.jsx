@@ -9,7 +9,7 @@ import {
 } from './SectionCards';
 import { getProfile, saveProfile } from '../lib/api';
 
-export default function MasterProfile({ profile, editingSection, setEditingSection, setProfile, onOpenUpload }) {
+export default function MasterProfile({ profile, userId, contextId, editingSection, setEditingSection, setProfile, onOpenUpload }) {
   // ── Periodic Polling for Background Scoring ─────────────────────────────────
   useEffect(() => {
     const hasPendingScore = (p) => {
@@ -20,11 +20,11 @@ export default function MasterProfile({ profile, editingSection, setEditingSecti
       ) || proj.some(p => p.impact_score === undefined);
     };
 
-    if (!profile || !hasPendingScore(profile)) return;
+    if (!profile || !hasPendingScore(profile) || !userId || !contextId) return;
 
     const interval = setInterval(async () => {
       try {
-        const res = await getProfile(1); // Demo user_id 1
+        const res = await getProfile(userId, contextId);
         if (res.profile && Object.keys(res.profile).length > 0) {
           setProfile(res.profile);
         }
@@ -34,13 +34,14 @@ export default function MasterProfile({ profile, editingSection, setEditingSecti
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [profile, setProfile]);
+  }, [profile, setProfile, userId, contextId]);
 
   // Sync state from backend on first load (to catch bootstrapped profile)
   useEffect(() => {
+    if (!userId || !contextId) return;
     async function init() {
       try {
-        const res = await getProfile(1);
+        const res = await getProfile(userId, contextId);
         if (res.profile && Object.keys(res.profile).length > 0) {
           setProfile(res.profile);
         }
@@ -48,8 +49,11 @@ export default function MasterProfile({ profile, editingSection, setEditingSecti
         console.warn('Initial profile sync failed');
       }
     }
-    init();
-  }, []); // Only once on mount
+    // Only run if parent hasn't loaded it yet
+    if (Object.keys(profile || {}).length <= 4) { // check if just default
+       init();
+    }
+  }, [userId, contextId]); // Run when userId or contextId is available
 
   // ── Profile completion ──────────────────────────────────────────────────────
   const calcCompletion = (p) => {
@@ -89,7 +93,7 @@ export default function MasterProfile({ profile, editingSection, setEditingSecti
         if (proj.bullets) proj.bullets = proj.bullets.map(b => b === original ? improved : b);
       });
       setProfile(p);
-      saveProfile(p, 1); // Persist and trigger re-score
+      if (userId) saveProfile(p, userId); // Persist and trigger re-score
     };
 
     // Replace an entire entry when user accepts entry-level improvement
@@ -103,7 +107,7 @@ export default function MasterProfile({ profile, editingSection, setEditingSecti
         p.projects[idx] = { ...p.projects[idx], ...improvedEntry };
       }
       setProfile(p);
-      saveProfile(p, 1); // Persist and trigger re-score
+      if (userId) saveProfile(p, userId); // Persist and trigger re-score
     };
 
     switch (name) {
@@ -142,7 +146,11 @@ export default function MasterProfile({ profile, editingSection, setEditingSecti
           <div className="profile-sub">Manage your resume and context.</div>
         </div>
         <div className="gap-2 flex-row">
-          <button className="btn" onClick={onOpenUpload}>
+          <button className="btn" onClick={() => {
+            const count = Number(localStorage.getItem('usage_count') || 0);
+            if (count >= 5) return alert("Monthly import limit reached! Take Premium to work on more resumes.");
+            onOpenUpload();
+          }}>
             <span className="mat-icon">upload</span> Upload
           </button>
         </div>
@@ -160,7 +168,7 @@ export default function MasterProfile({ profile, editingSection, setEditingSecti
       </div>
 
       <div className="flex-between" style={{marginBottom: '16px'}}>
-        <div></div>
+        <div />
       </div>
 
       <div className="col-layout">

@@ -67,25 +67,45 @@ export async function condenseProfile(data) {
   return res.json();
 }
 
-export async function getProfile(userId) {
-  const res = await fetch(`${API_BASE}/profile/${userId}`);
+export async function getProfile(userId, contextId) {
+  if (!userId || !contextId) throw new Error("userId and contextId are required for getProfile");
+  const res = await fetch(`${API_BASE}/profile/${userId}/${contextId}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-export async function deleteProfile(userId = 1) {
-  const res = await fetch(`${API_BASE}/profile/${userId}`, {
+export async function getProfiles(userId) {
+  if (!userId) throw new Error("userId is required for getProfiles");
+  const res = await fetch(`${API_BASE}/user/${userId}/onboarding-status`);
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.profiles || [];
+}
+
+export async function deleteProfile(userId, contextId) {
+  if (!userId || !contextId) throw new Error("userId and contextId are required for deleteProfile");
+  const res = await fetch(`${API_BASE}/profile/${userId}/${contextId}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-export async function saveProfile(profile, userId = 1) {
+export async function deleteUser(userId) {
+  if (!userId) throw new Error("userId is required for deleteUser");
+  const res = await fetch(`${API_BASE}/user/${userId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function saveProfile(profile, userId, contextId) {
+  if (!userId || !contextId) throw new Error("userId and contextId are required for saveProfile");
   const res = await fetch(`${API_BASE}/profile`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profile, user_id: userId }),
+    body: JSON.stringify({ profile, user_id: userId, context_id: contextId }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

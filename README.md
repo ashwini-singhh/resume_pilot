@@ -1,4 +1,4 @@
-# ResumeAI SaaS Pipeline 🚀
+# ResumePilot SaaS Pipeline 🚀
 
 A production-grade, full-stack SaaS application for AI-powered resume optimization. This project represents a migration from a monolithic Streamlit app to a modern, decoupled architecture.
 
@@ -71,6 +71,7 @@ npm run dev
 1. Create a new project on [Supabase.com](https://supabase.com).
 2. Open the **SQL Editor** in the Supabase dashboard.
 3. Copy the contents of `supabase/schema.sql` and run them to initialize your tables and security policies.
+4. **Auth Setup**: Follow the detailed [Supabase & Google Auth Guide](SUPABASE_AUTH_SETUP.md) to enable social logins.
 
 ---
 
