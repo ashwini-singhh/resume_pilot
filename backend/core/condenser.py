@@ -22,8 +22,11 @@ You are an expert technical recruiter and resume data engineer.
 Your goal is to parse and merge raw data from multiple sources into a single, highly structured, canonical Master Profile JSON.
 
 CRITICAL INSTRUCTIONS:
-1. NESTED PROJECTS:
-   - "experience" entries should contain a "projects" array for specific, named projects worked on DURING that tenure.
+1. NESTED PROJECTS (MANDATORY):
+   - DO NOT return a single massive list of bullets for long tenures.
+   - If the user has worked on distinct technical initiatives (e.g. "Rebuilt the ETL pipeline", "Migrated to Kubernetes"), you MUST group those into the "projects" array inside that experience entry.
+   - Use the top-level "bullets" array ONLY for general duties.
+   - This ensures Harvard-level clarity on impact.
 2. CERTIFICATIONS & ACHIEVEMENTS:
    - "certifications" SHOULD include: Formal certificates, Awards, Honors, Competition wins (e.g. "Runner up in..."), and technical badges (e.g. "3-star Leetcode").
 3. Deduplicate and group skills under logical categories.
@@ -83,6 +86,7 @@ async def condense_sources_into_profile(
     github_data: Optional[Dict] = None,
     manual_data: Optional[Dict] = None,
     current_profile: Optional[Dict] = None,
+    user_context: Optional[Dict] = None,
 ) -> Dict[Any, Any]:
     """
     Build a condensation prompt from raw sources, send to Agent.parse_content,
@@ -101,7 +105,7 @@ async def condense_sources_into_profile(
     prompt = CONDENSE_PROMPT + "\n" + json.dumps(payload, indent=2)
 
     logger.info("Triggering LLM Condensation Pipeline...")
-    merged_json = await agent.parse_content(content=prompt)
+    merged_json = await agent.parse_content(content=prompt, user_context=user_context)
 
     if not merged_json:
         logger.error("Failed to parse JSON from LLM")
@@ -112,51 +116,61 @@ async def condense_sources_into_profile(
 
 async def trigger_condensation_and_save(
     config: Config,
-    user_id: int,
+    user_id: str,
+    context_id: int,
     pdf_text: Optional[str] = None,
     github_data: Optional[Dict] = None,
     manual_data: Optional[Dict] = None,
 ) -> Dict:
     """
-    Creates an Agent from Config, loads the existing MasterProfile from DB,
+    Creates an Agent from Config, loads the existing MasterProfile linked to context_id,
     runs condense_sources_into_profile, and persists the result.
     """
     with Session(engine) as session:
-        profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
+        from core.models import UserContext
+        # Find the specific profile/context
+        context = session.exec(select(UserContext).where(UserContext.id == context_id)).first()
+        if not context:
+            logger.error(f"No context found for context_id {context_id}")
+            return {}
+        
+        # Find or create the MasterProfile for this specific context
+        profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
+        
+        user_context_dict = context.dict() if context else None
         current_data = profile.data if profile else {}
+        
         agent = Agent(config)
         new_data = await condense_sources_into_profile(
             agent=agent,
             pdf_text=pdf_text,
             github_data=github_data,
             manual_data=manual_data,
-            current_profile=current_data
+            current_profile=current_data,
+            user_context=user_context_dict
         )
         
-        # CRITICAL: Preserve section_order if LLM missed it or it existed before
+        # Preserve section_order
         if "section_order" not in new_data or not new_data["section_order"]:
             new_data["section_order"] = current_data.get("section_order", ["Work Experience", "Projects", "Education", "Skills", "Certifications"])
             
-        print('LLM generated JSON (with section_order): ', new_data)
         if profile:
             profile.data = new_data
-            session.add(profile)
         else:
-            profile = MasterProfile(user_id=user_id, data=new_data)
-            session.add(profile)
-
+            profile = MasterProfile(user_id=user_id, context_id=context_id, data=new_data)
+        
+        session.add(profile)
         session.commit()
         return new_data
 
 
-def save_profile_to_db(user_id: int, profile_data: Dict) -> None:
-    """Save a manually curated profile back to the MasterProfile table."""
+def save_profile_to_db(user_id: str, context_id: int, profile_data: Dict) -> None:
+    """Save profile data linked to a specific context id."""
     with Session(engine) as session:
-        profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
+        profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
         if profile:
             profile.data = profile_data
-            session.add(profile)
         else:
-            profile = MasterProfile(user_id=user_id, data=profile_data)
-            session.add(profile)
+            profile = MasterProfile(user_id=user_id, context_id=context_id, data=profile_data)
+        session.add(profile)
         session.commit()

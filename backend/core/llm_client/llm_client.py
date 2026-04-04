@@ -55,6 +55,7 @@ class LLMClient:
         self,
         messages: list[dict[str, Any]],
         stream: bool = False,
+        **override_kwargs,
     ) -> AsyncGenerator[StreamEvent, None]:
 
         client = self.get_client()
@@ -63,6 +64,10 @@ class LLMClient:
             "messages": messages,
             "stream": stream,
         }
+        if "max_tokens" in override_kwargs:
+            kwargs["max_tokens"] = override_kwargs["max_tokens"]
+        if "temperature" in override_kwargs:
+            kwargs["temperature"] = override_kwargs["temperature"]
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -165,7 +170,7 @@ class LLMClient:
         messages.append({"role": "user", "content": prompt})
 
         full_text = ""
-        async for event in self.chat_completion(messages=messages, stream=False):
+        async for event in self.chat_completion(messages=messages, stream=False, max_tokens=max_tokens, temperature=temperature):
             if event.type == StreamEventType.MESSAGE_COMPLETE and event.text_delta:
                 full_text = event.text_delta.content
                 break

@@ -71,7 +71,7 @@ class Agent:
                 raise RuntimeError(event.error)
         return full_text
 
-    async def parse_content(self, content: str) -> Dict | None:
+    async def parse_content(self, content: str, user_context: dict = None) -> Dict | None:
         """
         Main entry point to parse content into JSON.
         
@@ -80,7 +80,7 @@ class Agent:
         
         This is now an async method (no ThreadPoolExecutor needed in FastAPI).
         """
-        system_prompt = get_prompt_user_profile_generation()
+        system_prompt = get_prompt_user_profile_generation(user_context=user_context)
         prompt = f"{system_prompt}\n----\n{content}"
 
         logger.info(f"--- Sending parsing request to LLM ({self.config.model_name}) ---")

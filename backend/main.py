@@ -58,9 +58,9 @@ async def _on_startup():
     
     # Bootstrap default user if empty
     with Session(_db_engine) as session:
-        user = session.exec(select(User).where(User.id == 1)).first()
+        user = session.exec(select(User).where(User.id == "default-id")).first()
         if not user:
-            user = User(id=1, name="Ashwini Singh", email="ashwini@example.com")
+            user = User(id="default-id", name="Ashwini Singh", email="ashwini@example.com")
             session.add(user)
             session.commit()
             session.refresh(user)
@@ -94,7 +94,18 @@ class CondenseRequest(BaseModel):
     github_data: Optional[Dict] = None
     manual_data: Optional[Dict] = None
     current_profile: Optional[Dict] = None
-    user_id: int = 1
+    user_id: str = "default-id"
+    context_id: int
+
+class OnboardingRequest(BaseModel):
+    user_id: str
+    profile_name: str = "General"
+    experience_level: str
+    target_roles: List[str]
+    primary_skills: Optional[List[str]] = None
+    industries: List[str]
+    target_companies: List[str]
+    goals: str
 
 
 # ── Endpoints ─────────────────────────────────────────────
@@ -179,46 +190,47 @@ async def condense_profile(req: CondenseRequest, background_tasks: BackgroundTas
     Also triggers background impact scoring.
     """
     try:
-        # Use the persistence-aware trigger
+        # Use the multi-profile persistence trigger
         result = await trigger_condensation_and_save(
             config=_config,
             user_id=req.user_id,
+            context_id=req.context_id,
             pdf_text=req.pdf_text,
             github_data=req.github_data,
             manual_data=req.manual_data,
         )
         
-        # Dispatch background scoring
-        background_tasks.add_task(background_score_and_save, req.user_id, _db_engine, _config)
+        # Dispatch background scoring scoped to context
+        background_tasks.add_task(background_score_and_save, req.user_id, req.context_id, _db_engine, _config)
         
-        return {"profile": result}
+        return {"profile": result, "context_id": req.context_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Condensation failed: {str(e)}")
 
 
-@app.get("/api/profile/{user_id}")
-def get_profile(user_id: int):
-    """Fetch Master Profile for a user."""
+@app.get("/api/profile/{user_id}/{context_id}")
+def get_profile(user_id: str, context_id: int):
+    """Fetch Master Profile for a specific user persona/context."""
     from sqlmodel import Session, select
     from core.models import MasterProfile
     with Session(_db_engine) as session:
-        profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
+        profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
         if not profile:
-            return {"profile": {}}
-        return {"profile": profile.data}
+            return {"profile": {}, "context_id": context_id}
+        return {"profile": profile.data, "context_id": context_id}
 
 
-@app.delete("/api/profile/{user_id}")
-def delete_profile(user_id: int):
-    """Wipe the master profile for a user."""
+@app.delete("/api/profile/{user_id}/{context_id}")
+def delete_profile(user_id: str, context_id: int):
+    """Wipe a specific master profile context."""
     from sqlmodel import Session, select
     from core.models import MasterProfile
     with Session(_db_engine) as session:
-        profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
+        profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
         if profile:
             session.delete(profile)
             session.commit()
-    return {"status": "deleted", "user_id": user_id}
+    return {"status": "deleted", "context_id": context_id}
 
 
 @app.post("/api/profile")
@@ -229,23 +241,27 @@ async def save_profile(req: Dict[str, Any], background_tasks: BackgroundTasks):
     """
     from sqlmodel import Session, select
     from core.models import MasterProfile
-    user_id = req.get("user_id", 1)  # Default to demo user 1
+    user_id = req.get("user_id", "default-id")
+    context_id = req.get("context_id")
     data = req.get("profile", {})
     
+    if not context_id:
+         raise HTTPException(status_code=400, detail="context_id is required to save profile")
+
     with Session(_db_engine) as session:
-        profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
+        profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
         if profile:
             profile.data = data
-            session.add(profile)
         else:
-            profile = MasterProfile(user_id=user_id, data=data)
-            session.add(profile)
+            profile = MasterProfile(user_id=user_id, context_id=context_id, data=data)
+        
+        session.add(profile)
         session.commit()
     
-    # Launch background task for fresh scores
-    background_tasks.add_task(background_score_and_save, user_id, _db_engine, _config)
+    # Launch background task for context-specific scores
+    background_tasks.add_task(background_score_and_save, user_id, context_id, _db_engine, _config)
     
-    return {"status": "saved", "user_id": user_id}
+    return {"status": "saved", "context_id": context_id}
 
 
 @app.post("/api/apply-changes")
@@ -254,10 +270,96 @@ def apply_changes(req: ApplyRequest):
     final_resume = apply_decisions(req.suggestions, req.sections)
     stats = compute_optimization_stats(req.suggestions)
 
-    return {
-        "final_resume": final_resume,
-        "stats": stats
-    }
+    return {"final_resume": final_resume, "stats": stats}
+
+
+# ── Onboarding ───────────────────────────────────────────
+
+@app.get("/api/user/{user_id}/onboarding-status")
+def get_onboarding_status(user_id: str):
+    """Check if a user has completed onboarding and return their context."""
+    from sqlmodel import Session, select
+    from core.models import User, UserContext
+
+    with Session(_db_engine) as session:
+        user = session.exec(select(User).where(User.id == user_id)).first()
+        if not user:
+            return {"is_onboarded": False, "profiles": []}
+
+        profiles = session.exec(
+            select(UserContext).where(UserContext.user_id == user_id)
+        ).all()
+
+        return {
+            "is_onboarded": user.is_onboarded if user else False,
+            "profiles": [p.dict() for p in profiles],
+        }
+
+
+@app.post("/api/user/onboarding")
+async def submit_onboarding(req: OnboardingRequest):
+    """Save user onboarding context and mark as onboarded. Always creates a new profile entry."""
+    from sqlmodel import Session, select
+    from core.models import User, UserContext
+
+    with Session(_db_engine) as session:
+        # 1. Update or Create User
+        user = session.exec(select(User).where(User.id == req.user_id)).first()
+        if not user:
+            user = User(id=req.user_id, name="User", email="", is_onboarded=True)
+            session.add(user)
+        else:
+            user.is_onboarded = True
+            session.add(user)
+
+        # 2. Add New Context (Multiple profiles allowed)
+        new_context = UserContext(
+            user_id=req.user_id,
+            name=req.profile_name,
+            experience_level=req.experience_level,
+            target_roles=req.target_roles,
+            primary_skills=req.primary_skills or [],
+            industries=req.industries,
+            target_companies=req.target_companies,
+            goals=req.goals
+        )
+        session.add(new_context)
+        session.commit()
+        session.refresh(new_context)
+
+        return {
+            "status": "success",
+            "user_id": req.user_id,
+            "context_id": new_context.id,
+            "profile_name": new_context.name
+        }
+
+
+@app.delete("/api/user/{user_id}")
+async def delete_account(user_id: str):
+    """Permanently delete user profile, context, and the user record."""
+    from sqlmodel import Session, select
+    from core.models import User, UserContext, MasterProfile
+
+    with Session(_db_engine) as session:
+        # Delete context
+        context = session.exec(select(UserContext).where(UserContext.user_id == user_id)).first()
+        if context:
+            session.delete(context)
+
+        # Delete profile
+        profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
+        if profile:
+            session.delete(profile)
+
+        # Delete user
+        user = session.exec(select(User).where(User.id == user_id)).first()
+        if user:
+            session.delete(user)
+
+        session.commit()
+
+    return {"status": "success", "message": "Account deleted."}
 
 
 # ────────────────────────────────────────────────────────────

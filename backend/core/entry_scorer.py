@@ -335,20 +335,20 @@ def save_entry_suggestion(
     return suggestion_id
 
 
-async def background_score_and_save(user_id: int, db_engine, config):
+async def background_score_and_save(user_id: str, context_id: int, db_engine, config):
     """
     Background Task:
-    1. Fetch MasterProfile for user.
+    1. Fetch MasterProfile for a specific context.
     2. Extract and score all entries.
     3. Update the data JSON with impact_score and impact_reasons.
     4. Save back to DB.
     """
-    logger.info(f"Starting background scoring for user {user_id}...")
+    logger.info(f"Starting background scoring for dynamic profile (context {context_id})...")
     try:
         with Session(db_engine) as session:
-            profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
+            profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
             if not profile:
-                logger.error(f"Scoring failed: No profile found for user {user_id}")
+                logger.error(f"Scoring failed: No profile found for context {context_id}")
                 return
 
             data = profile.data or {}
@@ -358,6 +358,18 @@ async def background_score_and_save(user_id: int, db_engine, config):
             if not experience and not projects:
                 logger.info(f"Nothing to score for user {user_id}")
                 return
+
+            # Initialize all entries to 'None' (null in JS) to clear infinite loading
+            # and signal that the scoring process is aware of them.
+            for exp in experience:
+                exp["impact_score"] = None
+                exp["impact_reasons"] = []
+                for sub_proj in exp.get("projects", []):
+                    sub_proj["impact_score"] = None
+                    sub_proj["impact_reasons"] = []
+            for proj in projects:
+                proj["impact_score"] = None
+                proj["impact_reasons"] = []
 
             llm_client = LLMClient(config)
             scores = await score_entries(llm_client, experience, projects)
@@ -375,6 +387,10 @@ async def background_score_and_save(user_id: int, db_engine, config):
                     if pid in scores:
                         sub_proj["impact_score"] = scores[pid]["score"]
                         sub_proj["impact_reasons"] = scores[pid]["reasons"]
+                    else:
+                         # Fallback for skipped nested projects
+                         sub_proj["impact_score"] = sub_proj.get("impact_score") or 5.0
+                         sub_proj["impact_reasons"] = ["Automatically scored due to analysis timeout"]
 
             # Inject scores back into top-level projects
             for i, proj in enumerate(projects):
@@ -382,9 +398,10 @@ async def background_score_and_save(user_id: int, db_engine, config):
                 if eid in scores:
                     proj["impact_score"] = scores[eid]["score"]
                     proj["impact_reasons"] = scores[eid]["reasons"]
+                else:
+                    proj["impact_score"] = proj.get("impact_score") or 5.0
 
-            # Explicitly mark as modified for SQLModel if needed, 
-            # but usually assigning a new dict/list works.
+            # Explicitly mark as modified for SQLModel
             profile.data = data
             session.add(profile)
             session.commit()

@@ -26,6 +26,7 @@ async def optimize_bullet(
     client: LLMClient,
     bullet: str,
     keywords: List[str],
+    user_context: Optional[Dict] = None,
 ) -> Dict:
     """
     Optimize a single bullet using the provided LLM client.
@@ -45,6 +46,10 @@ async def optimize_bullet(
 
     prompt = prompt_template.replace("{bullet}", bullet)
     prompt = prompt.replace("{keywords}", ", ".join(keywords))
+
+    if user_context:
+        context_str = f"\nUser Context:\n- Experience: {user_context.get('experience_level')}\n- Target Roles: {', '.join(user_context.get('target_roles', []))}\n- Goals: {user_context.get('goals')}\n"
+        prompt = context_str + prompt
 
     try:
         result = await client.generate_json(
@@ -158,9 +163,14 @@ async def generate_tailored_suggestions(client: LLMClient, user_id: int, jd_text
         session.refresh(jd)
         
         # Build prompt payload
+        from core.models import UserContext
+        context = session.exec(select(UserContext).where(UserContext.user_id == user_id)).first()
+        user_context_dict = context.dict() if context else None
+
         payload = {
             "JOB_DESCRIPTION": jd_text,
-            "MASTER_PROFILE": profile.data
+            "MASTER_PROFILE": profile.data,
+            "USER_CONTEXT": user_context_dict
         }
         
         prompt = TAILOR_PROMPT + "\n\nINPUT DATA:\n" + json.dumps(payload, indent=2)

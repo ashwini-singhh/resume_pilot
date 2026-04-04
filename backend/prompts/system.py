@@ -1,9 +1,28 @@
 from datetime import datetime
 
-def get_prompt_user_profile_generation() -> str:
+def get_prompt_user_profile_generation(user_context: dict = None) -> str:
     parts = []
     parts.append(_get_system_prompt())
     parts.append(f"Current Date: {datetime.now().strftime('%Y-%m-%d')}")
+    
+    if user_context:
+        context_str = f"""
+--------------------------------------------------
+👤 USER CONTEXT
+--------------------------------------------------
+Experience Level: {user_context.get('experience_level')}
+Target Roles: {', '.join(user_context.get('target_roles', []))}
+Primary Skills: {', '.join(user_context.get('primary_skills', []))}
+Preferred Industries: {', '.join(user_context.get('industries', []))}
+Primary Goal: {user_context.get('goals')}
+
+Use this context to:
+1. Tailor the tone and weight of experience (e.g., focus more on academic projects for 'Student' level).
+2. Emphasize skills and roles aligned with the user's target.
+3. Ensure the summary and highlights align with the user's career goal.
+"""
+        parts.append(context_str)
+
     parts.append(_get_resume_generation_prompt())
     return "\n".join(parts)
 
@@ -117,17 +136,17 @@ Return ONLY valid JSON:
   "experience": [
     {
       "company": "Company Name",
-      "role": "Job Title",
-      "duration": "Date Range",
+      "title": "Job Title",
+      "period": "Date Range",
       "location": "City, State",
       "bullets": [
-        "General accomplishment or high-level responsibility"
+        "High-level context or general responsibilities of the role"
       ],
       "projects": [
         {
-          "name": "Specific Project Name",
+          "name": "Specific Technical Project Name",
           "bullets": [
-            "Project achievement with quantification"
+            "Quantifiable achievement using Action + Context + Result format"
           ]
         }
       ]
