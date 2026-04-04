@@ -76,8 +76,11 @@ sqlite_url = f"sqlite:///{sqlite_file_name}"
 database_url = os.getenv("DATABASE_URL")
 use_postgres = False
 
-if database_url and "YOUR-PASSWORD" not in database_url and "YOUR-PROJECT-REF" not in database_url:
-    # SQLModel / SQLAlchemy handles postgresql://
+if database_url:
+    # SQLAlchemy 1.4+ requires 'postgresql://' not 'postgres://'
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    
     engine_url = database_url
     use_postgres = True
 else:
