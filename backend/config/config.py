@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv() # Load from .env if present
 
 class ModelConfig(BaseModel):
-    name: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    name: str = "google/gemini-2.0-flash-001"
     temperature: float = Field(default=1.0, ge=0.0, le=2.0)
     context_window: int = 256000
 
@@ -18,15 +18,15 @@ class Config(BaseModel):
 
     @property
     def api_key(self) -> str | None:
-        return os.environ.get("API_KEY")
+        return os.environ.get("OPENROUTER_API_KEY") or os.environ.get("API_KEY")
     
     @property
     def base_url(self) -> str | None: 
-        return os.environ.get("BASE_URL")
+        return os.environ.get("OPENROUTER_BASE_URL") or os.environ.get("BASE_URL")
 
     @property
     def model_name(self) -> str: 
-        return self.model.name
+        return os.environ.get("MODEL_NAME") or os.environ.get("BASE_MODEL") or self.model.name
 
     @model_name.setter
     def model_name(self, value: str) -> None: 
