@@ -1,89 +1,95 @@
-# ResumePilot SaaS Pipeline 🚀
+# ResumePilot (ResumeDad) SaaS Platform 🚀
 
-A production-grade, full-stack SaaS application for AI-powered resume optimization. This project represents a migration from a monolithic Streamlit app to a modern, decoupled architecture.
+A production-grade, full-stack AI SaaS platform for resume optimization, grading, and career persona management. This application is architected for scale, high-performance AI inference, and automated CI/CD.
 
 ---
 
 ## 🏗️ System Architecture
 
-The application is split into a clean frontend-backend architecture for scalability and performance.
+The project follows a modern, decoupled cloud architecture:
 
-### 1. Frontend (`/frontend`) - Next.js (React)
-- **Interactive UI**: A premium, dark-mode dashboard built with modern React.
-- **Word-Level Diff**: Visualizes AI suggestions with green (additions) and red (deletions).
-- **State Management**: Handles granular "Accept/Reject/Accept All" logic for AI suggestions.
-- **Styling**: Pure CSS Modules for a high-performance, custom-branded experience.
+### 1. Frontend (`/frontend`) - Next.js (Vercel)
+- **Framework**: Next.js 14+ (App Router ready).
+- **Deployment**: Automated via Vercel with high-performance edge caching.
+- **Features**: 
+  - Premium Dark-Mode Dashboard.
+  - Real-time Word-Level Diff Visualization.
+  - Granular "Accept/Reject/Accept All" suggestion state management.
+- **Environment**: `NEXT_PUBLIC_API_URL` points to the Cloud Run backend.
 
-### 2. Backend (`/backend`) - FastAPI (Python)
-- **Stateless API**: Pure REST endpoints for resume parsing, JD analysis, and LLM optimization.
-- **Core Logic**: Decoupled Python modules for heavy-lifting text analysis.
-- **Generic LLM Client**: Supports Google Gemini, OpenAI, and other providers via unified prompts.
+### 2. Backend (`/backend`) - FastAPI (Google Cloud Run)
+- **Infrastructure**: Containerized Python 3.11 serverless deployment.
+- **CI/CD**: Automated GitHub Actions workflow (`deploy-backend.yml`).
+- **Capabilities**: 
+  - High-concurrency PDF parsing via PyMuPDF.
+  - Complex JD keyword extraction and matching algorithms.
+  - Context-aware LLM optimization loops.
 
-### 3. Database (`/supabase`) - Supabase (PostgreSQL)
-- **Schema**: Relational design for Users, Resumes, Job Descriptions, and Optimization Suggestions.
-- **RLS**: Row-Level Security for multi-tenant data protection.
+### 3. Database & Auth - Supabase (PostgreSQL)
+- **Data Layer**: Production-grade PostgreSQL hosting User Profiles, Resumes, and Scoring History.
+- **Security**: Row-Level Security (RLS) ensures multi-tenant data privacy.
+- **Persistence**: Hybrid connection support for both Supabase (Cloud) and SQLite (Local Dev).
+
+### 4. AI Engine - OpenRouter
+- **Model**: Defaulting to `google/gemini-2.0-flash-001` for high-speed, cost-effective reasoning.
+- **Flexibility**: Dynamically switchable via `MODEL_NAME` environment variable.
+- **Optimization**: Custom OpenRouter headers in `LLMClient` ensure high-priority routing.
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠️ Production Tech Stack
 
-- **Frontend**: Next.js, React, Lucide Icons, Diff-js.
-- **Backend**: FastAPI, Pydantic, PyMuPDF, Python-dotenv.
-- **AI/LLM**: Google Gemini (Standard), OpenAI (Configurable).
-- **Database**: Supabase / PostgreSQL.
+| Component | Technology |
+| :--- | :--- |
+| **Frontend** | Next.js, React, Framer Motion, Lucide-React |
+| **Backend** | FastAPI, SQLModel, Pydantic, uvicorn |
+| **Database** | Supabase (PostgreSQL) |
+| **AI API** | OpenRouter (Optimized for Gemini & Claude) |
+| **Cloud Hosting** | Google Cloud Run (Backend), Vercel (Frontend) |
+| **CI/CD** | GitHub Actions |
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Environment Configuration
 
-Follow these steps to set up the project locally.
+To run this in production, ensure the following keys are set:
 
-### 1. Backend Setup
+### Backend (GitHub Secrets / Cloud Run)
+- `DATABASE_URL`: Your Supabase connection string.
+- `OPENROUTER_API_KEY`: Your OpenRouter provider key.
+- `OPENROUTER_BASE_URL`: `https://openrouter.ai/api/v1`
+- `MODEL_NAME`: `google/gemini-2.0-flash-001` (Recommended)
+
+### Frontend (Vercel Dashboard)
+- `NEXT_PUBLIC_API_URL`: Your Cloud Run service URL.
+- `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase project URL.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase public key.
+
+---
+
+## 🔄 Automated Deployment Workflow
+
+1. **Code Push**: Push changes to the `main` branch.
+2. **Backend Build**: GitHub Action builds the Docker container and pushes to Google Artifact Registry.
+3. **Cloud Run Deploy**: Automatically creates a new revision on Google Cloud Run.
+4. **Vercel Deploy**: Vercel detects the push, builds the Next.js bundle, and flips the production alias.
+
+---
+
+## 👨‍💻 Local Development
 
 ```bash
-# Navigate to backend
+# Backend
 cd backend
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Start the FastAPI server
 uvicorn main:app --reload --port 8000
-```
-*The API will be available at `http://localhost:8000`. Swagger docs at `/docs`.*
 
-### 2. Frontend Setup
-
-```bash
-# Navigate to frontend
+# Frontend
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the Next.js dev server
 npm run dev
 ```
-*The UI will be available at `http://localhost:3000`.*
-
-### 3. Database Setup
-
-1. Create a new project on [Supabase.com](https://supabase.com).
-2. Open the **SQL Editor** in the Supabase dashboard.
-3. Copy the contents of `supabase/schema.sql` and run them to initialize your tables and security policies.
-4. **Auth Setup**: Follow the detailed [Supabase & Google Auth Guide](SUPABASE_AUTH_SETUP.md) to enable social logins.
 
 ---
 
-## 🔄 User Workflow
-
-1. **Config**: Enter your Gemini or OpenAI API Key in the dashboard.
-2. **Parse**: Upload a PDF or paste resume text. The backend parses it into structured sections.
-3. **Analyze**: Paste a Job Description. The backend extracts keywords and identifies "optimization candidates."
-4. **Optimize**: Click "Run AI Optimization." The system generates word-level suggestions to bridge the keyword gap.
-5. **Refine**: Review each suggestion. **Accept** to keep changes or **Reject** to revert to original text.
-6. **Apply**: Rebuild your optimized resume with all accepted changes.
-
----
-
-Developed as a senior-architected SaaS migration project.
+Developed as a senior-architected SaaS platform. **Launch ready.** 🏁✨

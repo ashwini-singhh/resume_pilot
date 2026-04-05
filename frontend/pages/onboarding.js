@@ -172,7 +172,8 @@ export default function Onboarding() {
         goals: formData.goals,
       };
 
-      const contextRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/user/onboarding`, {
+      const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+      const contextRes = await fetch(`${apiBase}/api/user/onboarding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(contextPayload),
