@@ -38,10 +38,18 @@ class LLMClient:
         Otherwise, initializes the client and returns it.
         """
         if self.client is None:
+            # OpenRouter headers for analytics and model ranking
+            is_openrouter = "openrouter.ai" in self.base_url.lower()
+            headers = {
+                "HTTP-Referer": "https://resume-pilot.vercel.app",
+                "X-Title": "ResumePilot AI",
+            } if is_openrouter else {}
+
             self.client = AsyncOpenAI(
                 api_key=self.api_key or "DUMMY",
                 base_url=self.base_url,
                 timeout=60.0,
+                default_headers=headers
             )
         return self.client
 
