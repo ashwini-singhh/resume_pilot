@@ -23,9 +23,12 @@ function MyApp({ Component, pageProps }) {
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/user/${session.user.id}/onboarding-status?t=${Date.now()}`);
           const { is_onboarded } = await res.json();
           
+          // Allow /onboarding if they are explicitly asking for a 'new' profile
+          const isNewProfileRequest = router.query.new === 'true';
+          
           if (!is_onboarded && router.pathname !== '/onboarding' && !isPublic) {
             router.replace('/onboarding');
-          } else if (is_onboarded && router.pathname === '/onboarding') {
+          } else if (is_onboarded && router.pathname === '/onboarding' && !isNewProfileRequest) {
             router.replace('/dashboard');
           }
         } catch (err) {

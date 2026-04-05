@@ -33,10 +33,12 @@ CRITICAL INSTRUCTIONS:
 4. Unify work history and education. Merge duplicates intelligently.
 5. DO NOT hallucinate.
 6. Output strict JSON matching the schema below.
+7. PDF SOURCE OF TRUTH: If PDF_RESUME_TEXT is provided, it is the absolute source of truth for Education school names, degree titles, and years. Favor its accuracy over any existing data in CURRENT_MASTER_PROFILE for these details.
 
 Output JSON Schema:
 {
   "name": "Full Name",
+  "summary": "High-impact 2-3 sentence professional summary.",
   "email": "Email address",
   "phone": "Phone",
   "location": "Location",

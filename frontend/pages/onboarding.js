@@ -139,14 +139,6 @@ export default function Onboarding() {
     checkUser();
   }, [router.isReady, router.query.new]);
 
-  if (authLoading) {
-    return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span className="mat-icon spin-icon" style={{ fontSize: '48px', color: 'var(--accent)' }}>sync</span>
-      </div>
-    );
-  }
-
   // Stage animation effect
   useEffect(() => {
     if (loading && !setupComplete) {
@@ -156,6 +148,14 @@ export default function Onboarding() {
       return () => clearInterval(interval);
     }
   }, [loading, setupComplete]);
+
+  if (authLoading) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="mat-icon spin-icon" style={{ fontSize: '48px', color: 'var(--accent)' }}>sync</span>
+      </div>
+    );
+  }
 
   const step = STEPS[currentStep];
 
@@ -221,22 +221,12 @@ export default function Onboarding() {
       const contextData = await contextRes.json();
       const newContextId = contextData.context_id;
 
-      // 2. Process Resume (Identical logic to dashboard.js)
-      let rawText = uploadText;
-      if (uploadFile) {
-        setSetupStage(1); // parsing
-        const parseRes = await api.parseResumeFile(uploadFile);
-        rawText = parseRes.raw_text;
-      }
-
-      setSetupStage(2); // AI condensing
-      await api.condenseProfile({
-        pdf_text: rawText,
-        user_id: user.id,
-        context_id: newContextId
-      });
+      // 2. Process Resume (Using unified pipeline function)
+      setSetupStage(1); // parsing
+      await api.executeExtractionPipeline(user.id, newContextId, uploadFile, uploadText);
 
       // 3. Finish
+
       setSetupComplete(true);
     } catch (err) {
       console.error('Setup failed detail:', err);
@@ -268,8 +258,9 @@ export default function Onboarding() {
             <span className="mat-icon">task_alt</span>
           </div>
           <h2>Profile Ready!</h2>
-          <p>Your Harvard-optimized dashboard has been prepared based on your context and resume.</p>
+          <p>You reached one step closer to your dream job.</p>
           <button className="btn btn-primary" style={{ marginTop: '32px', height: '56px', width: '100%' }} onClick={() => window.location.href = '/dashboard'}>
+
             Go to Dashboard <span className="mat-icon" style={{ fontSize: '18px', marginLeft: '6px' }}>chevron_right</span>
           </button>
         </div>
@@ -405,9 +396,22 @@ export default function Onboarding() {
             </div>
           </div>
         )}
-        <div className={`onboarding-card ${loading ? 'onboarding-loading' : ''}`}>
+        <div className={`onboarding-card ${loading ? 'onboarding-loading' : ''}`} style={{ position: 'relative' }}>
+          {router.query.new === 'true' && !loading && !setupComplete && (
+            <button 
+              onClick={() => router.replace('/dashboard')}
+              style={{
+                position: 'absolute', top: '16px', right: '16px',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center'
+              }}
+            >
+              <span className="mat-icon">close</span>
+            </button>
+          )}
           {renderCardContent()}
         </div>
+
       </div>
     </div>
   );

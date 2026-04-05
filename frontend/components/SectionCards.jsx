@@ -71,6 +71,50 @@ export function PersonalInfoCard({ profile, isEditing, onEditToggle, onChange })
   );
 }
 
+// Professional Summary Card
+export function SummaryCard({ summary, isEditing, onEditToggle, onChange }) {
+  const [tempData, setTempData] = useState(summary);
+
+  if (isEditing) {
+    return (
+      <div className="section-card animate-in">
+        <div className="card-header">
+           <div className="card-title">
+            <span className="mat-icon">description</span> Professional Summary
+          </div>
+        </div>
+        <textarea 
+          rows="4"
+          placeholder="A brief overview of your professional career and key strengths..."
+          value={tempData || ''}
+          onChange={e => setTempData(e.target.value)}
+          style={{ fontSize: '13px', marginTop: '12px' }}
+        />
+        <div className="flex-between" style={{ marginTop: '16px' }}>
+          <button className="btn" onClick={() => { setTempData(summary); onEditToggle(null); }}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => { onChange({ summary: tempData }); onEditToggle(null); }}>Save</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="section-card">
+      <div className="card-header">
+        <div className="card-title">
+          <span className="mat-icon">description</span> Professional Summary
+        </div>
+        <button className="card-edit" onClick={() => onEditToggle('Summary')}>
+          <span className="mat-icon">edit</span>
+        </button>
+      </div>
+      <p style={{ fontSize: '13px', color: 'var(--foreground)', fontStyle: 'italic', lineHeight: 1.5, margin: 0 }}>
+        {summary || "No summary provided. Add a brief profile highlight here."}
+      </p>
+    </div>
+  );
+}
+
 // Work Experience Card
 export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, onChange, onEntryImproved }) {
   const [improvingEntry, setImprovingEntry] = useState(null); // { entry, entryId, idx }

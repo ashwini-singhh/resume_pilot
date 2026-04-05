@@ -220,29 +220,8 @@ def get_profile(user_id: str, context_id: int):
         return {"profile": profile.data, "context_id": context_id}
 
 
-@app.delete("/api/profile/{user_id}/{context_id}")
-def delete_profile(user_id: str, context_id: int):
-    """Wipe a specific master profile and its persona context."""
-    from sqlmodel import Session, select
-    from core.models import MasterProfile, UserContext, LLMContextMessage
-    with Session(_db_engine) as session:
-        # 1. Delete associated messages
-        msgs = session.exec(select(LLMContextMessage).where(LLMContextMessage.context_id == context_id)).all()
-        for m in msgs:
-            session.delete(m)
 
-        # 2. Delete the profile data record
-        profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
-        if profile:
-            session.delete(profile)
 
-        # 3. Delete the persona context record
-        context = session.exec(select(UserContext).where(UserContext.id == context_id)).first()
-        if context:
-            session.delete(context)
-
-        session.commit()
-    return {"status": "deleted", "context_id": context_id}
 
 
 @app.post("/api/profile")
@@ -372,6 +351,43 @@ async def delete_account(user_id: str):
         session.commit()
 
     return {"status": "success", "message": "Account deleted."}
+
+
+@app.delete("/api/profile/{user_id}/{context_id}")
+async def delete_profile(user_id: str, context_id: int):
+    """Delete a specific persona (context) and its associated resume data."""
+    from sqlmodel import Session, select
+    from core.models import UserContext, MasterProfile, RawSource, JobDescription, OptimizationSuggestion
+
+    with Session(_db_engine) as session:
+        # 1. Verify existence and ownership
+        context = session.exec(select(UserContext).where(UserContext.id == context_id, UserContext.user_id == user_id)).first()
+        if not context:
+            raise HTTPException(status_code=404, detail="Profile/Context not found or unauthorized.")
+
+        # 2. Delete associated data
+        # MasterProfile
+        mp = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).all()
+        for p in mp: session.delete(p)
+        
+        # RawSource
+        rs = session.exec(select(RawSource).where(RawSource.context_id == context_id)).all()
+        for r in rs: session.delete(r)
+        
+        # JobDescription
+        jd = session.exec(select(JobDescription).where(JobDescription.context_id == context_id)).all()
+        for j in jd: session.delete(j)
+        
+        # OptimizationSuggestion
+        opt = session.exec(select(OptimizationSuggestion).where(OptimizationSuggestion.context_id == context_id)).all()
+        for o in opt: session.delete(o)
+        
+        # 3. Delete the context itself
+        session.delete(context)
+        session.commit()
+
+    return {"status": "success", "message": "Profile persona deleted."}
+
 
 
 # ────────────────────────────────────────────────────────────
