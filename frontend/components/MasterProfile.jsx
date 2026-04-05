@@ -10,9 +10,15 @@ import {
 import { getProfile, saveProfile } from '../lib/api';
 
 export default function MasterProfile({ profile, userId, contextId, editingSection, setEditingSection, setProfile, onOpenUpload }) {
-  // ── Periodic Polling for Background Scoring ─────────────────────────────────
+  // Use a ref to prevent the effect from re-running constantly when profile changes
+  const profileRef = useRef(profile);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
   useEffect(() => {
     const hasPendingScore = (p) => {
+      if (!p) return false;
       const exp = p.experience || [];
       const proj = p.projects || [];
       return exp.some(e => 
@@ -23,18 +29,27 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
     if (!profile || !hasPendingScore(profile) || !userId || !contextId) return;
 
     const interval = setInterval(async () => {
+      // Re-verify if we still need to poll using the latest ref
+      if (!hasPendingScore(profileRef.current)) {
+        clearInterval(interval);
+        return;
+      }
+
       try {
         const res = await getProfile(userId, contextId);
         if (res.profile && Object.keys(res.profile).length > 0) {
-          setProfile(res.profile);
+          // Check if it's actually different or has new scores
+          if (JSON.stringify(res.profile) !== JSON.stringify(profileRef.current)) {
+             setProfile(res.profile, false); // <--- DO NOT SAVE redundant data
+          }
         }
       } catch (e) {
         console.warn('Polling profile failed:', e.message);
       }
-    }, 5000);
+    }, 8000); // slowing down to 8s to be safe
 
     return () => clearInterval(interval);
-  }, [profile, setProfile, userId, contextId]);
+  }, [userId, contextId]); // Only restart if user or context changes
 
   // Sync state from backend on first load (to catch bootstrapped profile)
   useEffect(() => {
@@ -43,7 +58,7 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
       try {
         const res = await getProfile(userId, contextId);
         if (res.profile && Object.keys(res.profile).length > 0) {
-          setProfile(res.profile);
+          setProfile(res.profile, false);
         }
       } catch (e) {
         console.warn('Initial profile sync failed');

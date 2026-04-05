@@ -100,28 +100,52 @@ export default function Onboarding() {
   const [setupStage, setSetupStage] = useState(0);
   const [user, setUser] = useState(null);
 
+  const [authLoading, setAuthLoading] = useState(true);
+
   useEffect(() => {
     if (!router.isReady) return; // Wait for the URL query to be ready
 
     const checkUser = async () => {
+      setAuthLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
+      
       if (!session) {
         router.replace('/');
-      } else {
-        setUser(session.user);
-        
-        // Only skip to dashboard if it's NOT a request for a new profile
-        const isNew = router.query.new === 'true';
-        if (!isNew) {
-           const profiles = await api.getProfiles(session.user.id);
-           if (profiles.length > 0) {
-              router.replace('/dashboard');
-           }
+        return;
+      }
+
+      setUser(session.user);
+      
+      // If we're explicitly asking for a new profile, we're done here.
+      if (router.query.new === 'true') {
+        setAuthLoading(false);
+        return;
+      }
+
+      // Automatically skip if they already have profiles and didn't ask for a new one
+      try {
+        const profileList = await api.getProfiles(session.user.id);
+        if (profileList.length > 0) {
+          router.replace('/dashboard');
+        } else {
+          setAuthLoading(false);
         }
+      } catch (e) {
+        console.error("Profile check error:", e);
+        setAuthLoading(false);
       }
     };
+
     checkUser();
   }, [router.isReady, router.query.new]);
+
+  if (authLoading) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="mat-icon spin-icon" style={{ fontSize: '48px', color: 'var(--accent)' }}>sync</span>
+      </div>
+    );
+  }
 
   // Stage animation effect
   useEffect(() => {

@@ -289,9 +289,11 @@ export default function AppIndex() {
              profile={profile} 
              userId={user?.id}
              contextId={activeContextId}
-             setProfile={(newProf) => {
+             setProfile={(newProf, shouldSave = true) => {
                setProfile(newProf);
-               if (user && activeContextId) api.saveProfile(newProf, user.id, activeContextId);
+               if (shouldSave && user && activeContextId) {
+                 api.saveProfile(newProf, user.id, activeContextId);
+               }
              }} 
              editingSection={editingSection} 
              setEditingSection={setEditingSection} 
