@@ -222,14 +222,26 @@ def get_profile(user_id: str, context_id: int):
 
 @app.delete("/api/profile/{user_id}/{context_id}")
 def delete_profile(user_id: str, context_id: int):
-    """Wipe a specific master profile context."""
+    """Wipe a specific master profile and its persona context."""
     from sqlmodel import Session, select
-    from core.models import MasterProfile
+    from core.models import MasterProfile, UserContext, LLMContextMessage
     with Session(_db_engine) as session:
+        # 1. Delete associated messages
+        msgs = session.exec(select(LLMContextMessage).where(LLMContextMessage.context_id == context_id)).all()
+        for m in msgs:
+            session.delete(m)
+
+        # 2. Delete the profile data record
         profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
         if profile:
             session.delete(profile)
-            session.commit()
+
+        # 3. Delete the persona context record
+        context = session.exec(select(UserContext).where(UserContext.id == context_id)).first()
+        if context:
+            session.delete(context)
+
+        session.commit()
     return {"status": "deleted", "context_id": context_id}
 
 
@@ -342,17 +354,17 @@ async def delete_account(user_id: str):
     from core.models import User, UserContext, MasterProfile
 
     with Session(_db_engine) as session:
-        # Delete context
-        context = session.exec(select(UserContext).where(UserContext.user_id == user_id)).first()
-        if context:
-            session.delete(context)
+        # 1. Delete all profiles for this user
+        profiles = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).all()
+        for p in profiles:
+            session.delete(p)
 
-        # Delete profile
-        profile = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).first()
-        if profile:
-            session.delete(profile)
+        # 2. Delete all contexts for this user
+        contexts = session.exec(select(UserContext).where(UserContext.user_id == user_id)).all()
+        for c in contexts:
+            session.delete(c)
 
-        # Delete user
+        # 3. Delete the user record itself
         user = session.exec(select(User).where(User.id == user_id)).first()
         if user:
             session.delete(user)
