@@ -2,7 +2,7 @@ name: Deploy Backend to Cloud Run
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "feature/mvp1" ]
     # Only run when backend-related files change
     paths:
       - 'backend/**'
@@ -41,5 +41,5 @@ jobs:
             --source ./backend \
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
-            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }},API_KEY=${{ secrets.API_KEY }},OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }},OPENROUTER_BASE_URL=${{ secrets.OPENROUTER_BASE_URL }},MODEL_NAME=${{ secrets.MODEL_NAME }}" 
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }},API_KEY=${{ secrets.API_KEY }},OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }},OPENROUTER_BASE_URL=${{ secrets.OPENROUTER_BASE_URL }},MODEL_NAME=${{ secrets.MODEL_NAME }}" \
             --quiet
