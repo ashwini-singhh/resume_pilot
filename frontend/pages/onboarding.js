@@ -139,14 +139,6 @@ export default function Onboarding() {
     checkUser();
   }, [router.isReady, router.query.new]);
 
-  if (authLoading) {
-    return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span className="mat-icon spin-icon" style={{ fontSize: '48px', color: 'var(--accent)' }}>sync</span>
-      </div>
-    );
-  }
-
   // Stage animation effect
   useEffect(() => {
     if (loading && !setupComplete) {
@@ -156,6 +148,14 @@ export default function Onboarding() {
       return () => clearInterval(interval);
     }
   }, [loading, setupComplete]);
+
+  if (authLoading) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="mat-icon spin-icon" style={{ fontSize: '48px', color: 'var(--accent)' }}>sync</span>
+      </div>
+    );
+  }
 
   const step = STEPS[currentStep];
 
