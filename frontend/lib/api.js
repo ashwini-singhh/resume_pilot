@@ -194,3 +194,27 @@ export async function improveEntry({ section, entry, entry_id, questions, answer
   if (!res.ok) throw new Error(await res.text());
   return res.json(); // { entry_id, original_entry, improved_entry, bullet_diffs, changed }
 }
+
+
+/**
+ * Shared logic for Onboarding & Dashboard Upload
+ * Handles: PDF Parse -> AI Condensation -> Returns new Profile JSON
+ */
+export async function executeExtractionPipeline(userId, contextId, file, text, currentProfile = null) {
+  // 1. PDF Parsing if file provided
+  let rawText = text;
+  if (file) {
+    const parseRes = await parseResumeFile(file);
+    rawText = parseRes.raw_text;
+  }
+
+  // 2. AI Condensation (Updates DB on backend automatically)
+  const result = await condenseProfile({
+    pdf_text: rawText,
+    user_id: userId,
+    context_id: contextId,
+    current_profile: currentProfile
+  });
+
+  return result.profile;
+}

@@ -117,6 +117,24 @@ export default function AppIndex() {
     router.push('/onboarding?new=true');
   }
 
+  async function handleDeleteProfile(contextId) {
+    if (!window.confirm("Are you sure you want to delete this persona? This will permanently remove its resume data.")) return;
+    try {
+      await api.deleteProfile(user.id, contextId);
+      const updated = profiles.filter(p => p.id !== contextId);
+      setProfiles(updated);
+      if (activeContextId === contextId) {
+        if (updated.length > 0) {
+          handleSwitchProfile(updated[0].id);
+        } else {
+          router.replace('/onboarding');
+        }
+      }
+    } catch (e) {
+      alert("Failed to delete profile: " + e.message);
+    }
+  }
+
   function handleUploadMode() {
     setUploadFile(null);
     setUploadText("");
@@ -161,40 +179,33 @@ export default function AppIndex() {
   };
 
   const handleExtract = async () => {
+    // 0. Usage Check
+    const count = Number(localStorage.getItem('usage_count') || 0);
+    if (count >= 5) {
+      return alert("Monthly limit reached (5/5). Upgrade to Premium to continue!");
+    }
+
     if (!uploadFile && !uploadText.trim()) {
       return alert("Please upload a PDF or paste resume text.");
     }
 
     setLoading(true);
     try {
-      let rawText = uploadText;
-      
-      // 1. If file, parse it first
-      if (uploadFile) {
-        setExtractionStep("Extracing text from PDF...");
-        const parseRes = await api.parseResumeFile(uploadFile);
-        rawText = parseRes.raw_text;
-      }
+      setExtractionStep("Working...");
+      const resultProfile = await api.executeExtractionPipeline(user.id, activeContextId, uploadFile, uploadText, profile);
 
-      // 2. Condense/Parse via AI Agent
-      setExtractionStep("AI Agent is condensing profile...");
-      const condenseRes = await api.condenseProfile({
-        pdf_text: rawText,
-        user_id: user.id,
-        context_id: activeContextId,
-        current_profile: profile
-      });
-
-      if (condenseRes.profile) {
+      if (resultProfile) {
         const updatedProfile = {
-          ...condenseRes.profile,
+          ...resultProfile,
           section_order: profile.section_order // preserve section order
         };
         setProfile(updatedProfile);
-        // Save to DB
-        if (user && activeContextId) {
-          await api.saveProfile(updatedProfile, user.id, activeContextId);
+
+        // Increment usage count if a file was actually processed
+        if (uploadFile) {
+          localStorage.setItem('usage_count', (count + 1).toString());
         }
+
         setExtractionStep("Success!");
         setShowUpload(false);
       }
@@ -284,6 +295,7 @@ export default function AppIndex() {
             activeContextId={activeContextId}
             onSwitchProfile={handleSwitchProfile}
             onNewProfile={handleNewProfile}
+            onDeleteProfile={handleDeleteProfile}
           />
           <MasterProfile 
              profile={profile} 

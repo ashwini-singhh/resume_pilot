@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function Sidebar({ githubSyncData, setGithubSyncData, profiles, activeContextId, onSwitchProfile, onNewProfile }) {
+export default function Sidebar({ githubSyncData, setGithubSyncData, profiles, activeContextId, onSwitchProfile, onNewProfile, onDeleteProfile }) {
   const [ghUrl, setGhUrl] = useState('');
   const [ghToken, setGhToken] = useState('');
   const [maxRepos, setMaxRepos] = useState(8);
@@ -73,15 +73,31 @@ export default function Sidebar({ githubSyncData, setGithubSyncData, profiles, a
           const role = (p.target_roles && p.target_roles.length > 0) ? p.target_roles[0] : "General";
 
           return (
-            <div key={p.id} className={`app-row ${activeContextId === p.id ? 'active' : ''}`} onClick={() => onSwitchProfile(p.id)}>
+            <div key={p.id} className={`app-row ${activeContextId === p.id ? 'active' : ''}`} onClick={() => onSwitchProfile(p.id)} style={{ position: 'relative' }}>
               <div className="app-avatar" style={{ background: color }}>{p.name[0]}</div>
               <span className="app-name">{p.name}</span>
               <span className="app-count">{role}</span>
-              {activeContextId === p.id && (
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e' }}></div>
-              )}
+              
+              <div className="profile-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {activeContextId === p.id && (
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e' }}></div>
+                )}
+                <button 
+                  className="icon-btn-delete"
+                  onClick={(e) => { e.stopPropagation(); onDeleteProfile(p.id); }}
+                  style={{ 
+                    background: 'none', border: 'none', cursor: 'pointer', opacity: 0.3, padding: '4px',
+                    display: 'flex', alignItems: 'center', color: 'inherit'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                  onMouseLeave={e => e.currentTarget.style.opacity = 0.3}
+                >
+                  <span className="mat-icon" style={{ fontSize: '14px' }}>delete</span>
+                </button>
+              </div>
             </div>
           );
+
         })}
         <div className="app-row" style={{ borderStyle: 'dashed', borderLeftColor: 'transparent', borderColor: '#94a3b8', color: '#475569', marginTop: '12px', padding: '6px 16px' }} onClick={onNewProfile}>
           <div className="app-avatar" style={{ width: '24px', height: '24px', background: '#e2e8f0', color: '#475569' }}>

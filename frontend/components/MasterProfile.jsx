@@ -5,7 +5,8 @@ import {
   ProjectsCard, 
   EducationCard, 
   SkillsCard, 
-  CertificationsCard 
+  CertificationsCard,
+  SummaryCard
 } from './SectionCards';
 import { getProfile, saveProfile } from '../lib/api';
 
@@ -16,40 +17,8 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
     profileRef.current = profile;
   }, [profile]);
 
-  useEffect(() => {
-    const hasPendingScore = (p) => {
-      if (!p) return false;
-      const exp = p.experience || [];
-      const proj = p.projects || [];
-      return exp.some(e => 
-        e.impact_score === undefined || (e.projects || []).some(sp => sp.impact_score === undefined)
-      ) || proj.some(p => p.impact_score === undefined);
-    };
+  // sync removed to favor simplicity and manual refresh as requested
 
-    if (!profile || !hasPendingScore(profile) || !userId || !contextId) return;
-
-    const interval = setInterval(async () => {
-      // Re-verify if we still need to poll using the latest ref
-      if (!hasPendingScore(profileRef.current)) {
-        clearInterval(interval);
-        return;
-      }
-
-      try {
-        const res = await getProfile(userId, contextId);
-        if (res.profile && Object.keys(res.profile).length > 0) {
-          // Check if it's actually different or has new scores
-          if (JSON.stringify(res.profile) !== JSON.stringify(profileRef.current)) {
-             setProfile(res.profile, false); // <--- DO NOT SAVE redundant data
-          }
-        }
-      } catch (e) {
-        console.warn('Polling profile failed:', e.message);
-      }
-    }, 8000); // slowing down to 8s to be safe
-
-    return () => clearInterval(interval);
-  }, [userId, contextId]); // Only restart if user or context changes
 
   // Sync state from backend on first load (to catch bootstrapped profile)
   useEffect(() => {
@@ -90,6 +59,7 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
   const leftSections = [];
   const rightSections = [];
   (profile.section_order || []).forEach((sec, i) => {
+    if (sec === 'Summary' || sec === 'Overview') return; // Handled separately or hidden
     if (i % 2 === 0) leftSections.push(sec);
     else rightSections.push(sec);
   });
@@ -108,7 +78,7 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
         if (proj.bullets) proj.bullets = proj.bullets.map(b => b === original ? improved : b);
       });
       setProfile(p);
-      if (userId) saveProfile(p, userId); // Persist and trigger re-score
+      if (userId && contextId) saveProfile(p, userId, contextId); // Persist to specific context
     };
 
     // Replace an entire entry when user accepts entry-level improvement
@@ -122,7 +92,7 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
         p.projects[idx] = { ...p.projects[idx], ...improvedEntry };
       }
       setProfile(p);
-      if (userId) saveProfile(p, userId); // Persist and trigger re-score
+      if (userId && contextId) saveProfile(p, userId, contextId); // Persist to specific context
     };
 
     switch (name) {
@@ -181,6 +151,13 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
           <div className="progress-bar-fill" style={{ width: `${pct}%` }}></div>
         </div>
       </div>
+      
+      <SummaryCard 
+        summary={profile.summary} 
+        isEditing={editingSection === 'Summary'} 
+        onEditToggle={setEditingSection} 
+        onChange={(s) => setProfile({...profile, ...s})} 
+      />
 
       <div className="flex-between" style={{marginBottom: '16px'}}>
         <div />
