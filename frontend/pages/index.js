@@ -12,9 +12,15 @@ import Pricing from '../components/landing/Pricing';
 import Comparison from '../components/landing/Comparison';
 import FinalCTA from '../components/landing/FinalCTA';
 
+import Head from 'next/head';
+
 export default function LandingPage() {
   return (
     <>
+      <Head>
+        <title>ResumePilot | AI-Powered Resume Success</title>
+        <link rel="icon" href="/favicon.ico" />
+      </Head>
       <LandingNav />
       <main>
         <Hero />
