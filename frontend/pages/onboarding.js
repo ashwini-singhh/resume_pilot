@@ -101,16 +101,27 @@ export default function Onboarding() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    if (!router.isReady) return; // Wait for the URL query to be ready
+
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.replace('/');
       } else {
         setUser(session.user);
+        
+        // Only skip to dashboard if it's NOT a request for a new profile
+        const isNew = router.query.new === 'true';
+        if (!isNew) {
+           const profiles = await api.getProfiles(session.user.id);
+           if (profiles.length > 0) {
+              router.replace('/dashboard');
+           }
+        }
       }
     };
     checkUser();
-  }, [router]);
+  }, [router.isReady, router.query.new]);
 
   // Stage animation effect
   useEffect(() => {
@@ -180,7 +191,8 @@ export default function Onboarding() {
       });
       if (!contextRes.ok) {
         const errText = await contextRes.text();
-        throw new Error(`Onboarding context failed: ${errText}`);
+        console.error('Onboarding Context Error Response:', errText);
+        throw new Error(`Profile initialization failed (${contextRes.status}): ${errText || 'Server Error'}`);
       }
       const contextData = await contextRes.json();
       const newContextId = contextData.context_id;
@@ -245,7 +257,7 @@ export default function Onboarding() {
         <div className="setup-processing animate-in">
           <div className="setup-loader">
             <div className="loader-inner"></div>
-            <span className="mat-icon">sync</span>
+            <span className="mat-icon spin-icon">sync</span>
           </div>
           <h2 className="setup-stage-text">{STAGES[setupStage]}</h2>
           <div className="setup-progress-track">
@@ -357,7 +369,10 @@ export default function Onboarding() {
 
   return (
     <div className="onboarding-page">
-      <Head><title>Setup | ResumePilot</title></Head>
+      <Head>
+        <title>Setup | ResumePilot</title>
+        <link rel="icon" href="/favicon.ico" />
+      </Head>
       <div className="onboarding-container">
         {!loading && !setupComplete && (
           <div className="onboarding-progress-wrapper">
