@@ -31,7 +31,7 @@ function ScoreFill({ score }) {
 }
 
 export default function ImpactScoreBadge({ score, loading, reasons, onImprove, compact }) {
-  const showImproveBtn = !loading && score !== null && score < 7.5;
+  const showImproveBtn = !loading && score !== null && onImprove;
 
   const emoji = score === null ? '' : score >= 8 ? '🟢' : score >= 5.5 ? '🟡' : '🔴';
   const label = score === null ? '' : score >= 8 ? 'Strong' : score >= 5.5 ? 'Moderate' : 'Weak';
@@ -56,42 +56,63 @@ export default function ImpactScoreBadge({ score, loading, reasons, onImprove, c
       .spin-icon {
         animation: spin-slow 3s infinite linear;
       }
+      .btn-fix-icon {
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid transparent;
+        border-radius: 20px;
+        height: 28px;
+        width: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s, border-color 0.2s, transform 0.2s;
+        overflow: hidden;
+        white-space: nowrap;
+        padding: 0;
+      }
+      .btn-fix-icon:hover {
+        width: 68px;
+        background: rgba(0, 82, 255, 0.08);
+        border-color: rgba(0, 82, 255, 0.15);
+        transform: translateY(-1px);
+      }
+      .btn-fix-icon .fix-text {
+        font-size: 11px;
+        font-weight: 700;
+        margin-left: 4px;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      .btn-fix-icon:hover .fix-text {
+        opacity: 1;
+        transition-delay: 0.1s;
+      }
     `}</style>
   );
 
   if (compact) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', width: '100%' }}>
         {animations}
-        {loading ? (
-          <span className="score-loading" style={{ fontSize: '11px', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span className="mat-icon spin-icon" style={{ fontSize: '13px' }}>hourglass_empty</span> Scoring...
-          </span>
-        ) : score !== null ? (
-          <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {loading ? (
+            <span className="score-loading" style={{ fontSize: '11px', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="mat-icon spin-icon" style={{ fontSize: '13px' }}>hourglass_empty</span> Scoring...
+            </span>
+          ) : score !== null ? (
             <span style={{ fontSize: '11px', color: labelColor }}>
               {emoji} Impact: <b>{score.toFixed(1)}/10</b>
             </span>
-            {showImproveBtn && (
-              <button
-                onClick={onImprove}
-                style={{
-                  background: 'linear-gradient(135deg, var(--accent), var(--accent-secondary))',
-                  color: '#fff', border: 'none', borderRadius: '6px',
-                  padding: '3px 10px', fontSize: '11px', fontWeight: 600,
-                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px',
-                  boxShadow: '0 2px 8px rgba(0,82,255,0.2)',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,82,255,0.3)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,82,255,0.2)'; }}
-              >
-                <span className="mat-icon" style={{ fontSize: '13px' }}>auto_awesome</span>
-                Improve Entry
-              </button>
-            )}
-          </>
-        ) : null}
+          ) : null}
+        </div>
+        {showImproveBtn && (
+          <button onClick={onImprove} className="btn-fix-icon" title="Fix Entry">
+            <span className="mat-icon" style={{ fontSize: '14px' }}>auto_awesome</span>
+            <span className="fix-text">Fix</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -121,21 +142,9 @@ export default function ImpactScoreBadge({ score, loading, reasons, onImprove, c
         </div>
 
         {showImproveBtn && (
-          <button
-            onClick={onImprove}
-            style={{
-              background: 'linear-gradient(135deg, var(--accent), var(--accent-secondary))',
-              color: '#fff', border: 'none', borderRadius: '8px',
-              padding: '5px 14px', fontSize: '12px', fontWeight: 600,
-              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px',
-              boxShadow: '0 2px 8px rgba(0,82,255,0.2)',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,82,255,0.35)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,82,255,0.2)'; }}
-          >
+          <button onClick={onImprove} className="btn-fix-icon" title="Fix Entry">
             <span className="mat-icon" style={{ fontSize: '15px' }}>auto_awesome</span>
-            Improve Entry
+            <span className="fix-text">Fix</span>
           </button>
         )}
       </div>

@@ -3,17 +3,22 @@ Resume AI Pipeline — FastAPI Backend
 Uses Agent + Config + LLMClient exactly like the original Streamlit system.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Request, Header
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from dotenv import load_dotenv
 
 # Load .env before anything else reads env vars
-load_dotenv()
+load_dotenv(override=True)
+
+from util.response import AppResponse, LLMError
 
 from config.config import Config
 from agent.agent import Agent
+from core.diagnostic import run_global_diagnostic
+from core.generator import generate_section_content
 from core.parser import extract_bullets, extract_sections, extract_text_from_pdf
 from core.matcher import extract_jd_keywords, match_bullets_to_keywords, compute_keyword_coverage, get_optimization_candidates
 from core.optimizer import optimize_bullets_batch, apply_decisions
@@ -30,11 +35,32 @@ from core.bullet_improver import (
 )
 from core.entry_scorer import (
     improve_entry,
+    evaluate_entry,
+    score_entries,
+    chat_interview_turn,
     save_entry_suggestion,
     background_score_and_save,
 )
-from core.models import engine as _db_engine
-from sqlmodel import SQLModel
+from core.jd_pipeline import (
+    run_relevance_scoring,
+    save_entry_scores,
+    run_ats_optimization,
+    save_optimization_suggestions,
+    run_gap_analysis,
+    save_gap_analysis,
+    get_jd_results,
+)
+from core.models import (
+    engine as _db_engine,
+    JobDescription,
+    MasterProfile,
+    OptimizationSuggestion,
+    UserContext,
+    User
+)
+from sqlmodel import SQLModel, Session, select
+from core.payment_service import PaymentService
+
 
 app = FastAPI(title="Resume AI Pipeline API")
 
@@ -45,6 +71,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(LLMError)
+async def llm_error_handler(request, exc: LLMError):
+    resp = AppResponse.fail(message=exc.message, code=exc.code, metadata=exc.details)
+    return JSONResponse(status_code=exc.code, content=resp.dict())
+
+@app.exception_handler(Exception)
+async def general_error_handler(request, exc: Exception):
+    import logging
+    logging.getLogger("uvicorn").error(f"Unhandled Exception: {str(exc)}", exc_info=True)
+    resp = AppResponse.fail(message="An unexpected server error occurred", code=500)
+    return JSONResponse(status_code=500, content=resp.dict())
 
 # ── Global Config (reads API_KEY / BASE_URL from .env) ──
 _config = Config()
@@ -107,12 +145,36 @@ class OnboardingRequest(BaseModel):
     target_companies: List[str]
     goals: str
 
+class CheckoutSessionRequest(BaseModel):
+    user_id: str
+    amount: int  # Example: 200
+
+# ── Usage Helper ──────────────────────────────────────────
+
+async def check_usage_limit(user_id: str):
+    with Session(_db_engine) as session:
+        user = session.exec(select(User).where(User.id == user_id)).first()
+        if not user:
+            raise HTTPException(status_code=403, detail="User not found")
+            
+        if user.subscription_status == "active":
+            return True
+            
+        if user.free_runs_remaining > 0:
+            user.free_runs_remaining -= 1
+            session.add(user)
+            session.commit()
+            return True
+            
+        raise HTTPException(status_code=402, detail="Usage limit reached. Please upgrade to continue.")
+
 
 # ── Endpoints ─────────────────────────────────────────────
 
+
 @app.get("/")
 def health_check():
-    return {"status": "ok", "model": _config.model_name, "base_url": _config.base_url}
+    return AppResponse.ok(data={"status": "ok", "model": _config.model_name, "base_url": _config.base_url})
 
 
 @app.post("/api/parse-resume")
@@ -189,6 +251,7 @@ async def condense_profile(req: CondenseRequest, background_tasks: BackgroundTas
     Run the full Agent condensation pipeline and SAVE to DB.
     Also triggers background impact scoring.
     """
+    await check_usage_limit(req.user_id)
     try:
         # Use the multi-profile persistence trigger
         result = await trigger_condensation_and_save(
@@ -203,7 +266,7 @@ async def condense_profile(req: CondenseRequest, background_tasks: BackgroundTas
         # Dispatch background scoring scoped to context
         background_tasks.add_task(background_score_and_save, req.user_id, req.context_id, _db_engine, _config)
         
-        return {"profile": result, "context_id": req.context_id}
+        return AppResponse.ok(data={"profile": result, "context_id": req.context_id})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Condensation failed: {str(e)}")
 
@@ -281,10 +344,14 @@ def get_onboarding_status(user_id: str):
             select(UserContext).where(UserContext.user_id == user_id)
         ).all()
 
-        return {
-            "is_onboarded": user.is_onboarded if user else False,
+        is_actually_onboarded = user.is_onboarded if user else False
+        if len(profiles) == 0:
+            is_actually_onboarded = False
+
+        return AppResponse.ok(data={
+            "is_onboarded": is_actually_onboarded,
             "profiles": [p.dict() for p in profiles],
-        }
+        })
 
 
 @app.post("/api/user/onboarding")
@@ -307,23 +374,26 @@ async def submit_onboarding(req: OnboardingRequest):
         new_context = UserContext(
             user_id=req.user_id,
             name=req.profile_name,
-            experience_level=req.experience_level,
-            target_roles=req.target_roles,
-            primary_skills=req.primary_skills or [],
-            industries=req.industries,
-            target_companies=req.target_companies,
-            goals=req.goals
+            onboarding_context={
+                "experience_level": req.experience_level,
+                "target_roles": req.target_roles,
+                "primary_skills": req.primary_skills or [],
+                "industries": req.industries,
+                "target_companies": req.target_companies,
+                "goals": req.goals
+            },
+            chat_context={}
         )
         session.add(new_context)
         session.commit()
         session.refresh(new_context)
 
-        return {
+        return AppResponse.ok(data={
             "status": "success",
             "user_id": req.user_id,
             "context_id": new_context.id,
             "profile_name": new_context.name
-        }
+        })
 
 
 @app.delete("/api/user/{user_id}")
@@ -540,17 +610,35 @@ class ScoreEntriesRequest(BaseModel):
     experience: List[Dict[str, Any]] = []
     projects: List[Dict[str, Any]] = []
 
-class EntryQuestionsRequest(BaseModel):
-    section: str                  # 'experience' | 'projects'
-    entry: Dict[str, Any]         # The full entry object (company, title, bullets, ...)
-    entry_id: str                 # e.g. 'exp_0' | 'proj_1'
+class EntryInterviewTurnRequest(BaseModel):
+    section: str
+    entry: Dict[str, Any]
+    entry_id: str
+    chat_history: List[Dict[str, str]] = []
+    user_context: Dict[str, Any] = {}
+    pre_identified_questions: List[str] = []  # From evaluation step
+
+class EvaluateEntryRequest(BaseModel):
+    user_id: str
+    context_id: Optional[int] = None
+    entry_id: str
+    section: str  # "experience" | "project"
 
 class ImproveEntryRequest(BaseModel):
     section: str
     entry: Dict[str, Any]
     entry_id: str
-    questions: List[str]
-    answers: List[str]
+    chat_history: List[Dict[str, str]]
+    user_context: Dict[str, Any] = {}
+
+class RunDiagnosticRequest(BaseModel):
+    user_id: str
+    context_id: Optional[int] = None
+
+class GenerateSectionRequest(BaseModel):
+    user_id: str
+    context_id: Optional[int] = None
+    section: str  # "summary" or "skills"
 
 
 @app.post("/api/score-entries")
@@ -571,21 +659,124 @@ async def api_score_entries(req: ScoreEntriesRequest):
         raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
 
 
-@app.post("/api/entry/generate-questions")
-async def api_entry_generate_questions(req: EntryQuestionsRequest):
+@app.post("/api/profile/diagnostic")
+async def api_global_diagnostic(req: RunDiagnosticRequest):
     """
-    Generate 3–5 targeted questions specific to a single entry's gaps.
+    Evaluates the entire profile against UserContext to provide global feedback, 
+    competitiveness score, and identify missing skills.
+    Saves the result to MasterProfile.data for persistence.
+    """
+    from sqlmodel import Session, select
+    from core.models import MasterProfile
+    from sqlalchemy.orm.attributes import flag_modified
+
+    try:
+        profile_data, user_context = _get_profile_and_context(req.user_id, req.context_id)
+        if not profile_data:
+            raise HTTPException(status_code=400, detail="Profile data is missing.")
+
+        client = LLMClient(_config)
+        result = await run_global_diagnostic(
+            llm_client=client,
+            profile_data=profile_data,
+            user_context=user_context
+        )
+
+        # Persist the diagnostic result
+        with Session(_db_engine) as session:
+            profile = session.exec(
+                select(MasterProfile).where(MasterProfile.context_id == req.context_id)
+            ).first()
+            if profile:
+                profile.data["global_diagnostic"] = result
+                flag_modified(profile, "data")
+                session.add(profile)
+                session.commit()
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Diagnostic failed: {str(e)}")
+
+
+@app.post("/api/profile/generate-section")
+async def api_generate_section(req: GenerateSectionRequest):
+    """
+    Generates missing resume sections (e.g. Professional Summary, Skills) 
+    by inferring from the user's existing work experience and target role.
+    """
+    try:
+        profile_data, user_context = _get_profile_and_context(req.user_id, req.context_id)
+        if not profile_data:
+            raise HTTPException(status_code=400, detail="Profile data is missing.")
+
+        client = LLMClient(_config)
+        content = await generate_section_content(
+            llm_client=client,
+            section=req.section,
+            profile_data=profile_data,
+            user_context=user_context
+        )
+        return {"content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+@app.post("/api/entry/evaluate")
+async def api_entry_evaluate(req: EvaluateEntryRequest):
+    """
+    Phase 1 — 4-Step recruiter evaluation on a single resume entry.
+    READ-ONLY: does not modify bullets.
+    Returns: score, strength_level, issues, context_gaps, reasoning, follow_up_questions
+    """
+    try:
+        # Fetch profile data and resolve the entry
+        profile_data, user_context = _get_profile_and_context(req.user_id, req.context_id)
+        entries = _build_entries_list(profile_data)
+        entry_map = {e["entry_id"]: e for e in entries}
+        
+        entry = entry_map.get(req.entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"Entry '{req.entry_id}' not found in profile.")
+        
+        client = LLMClient(_config)
+        result = await evaluate_entry(
+            llm_client=client,
+            entry=entry,
+            entry_id=req.entry_id,
+            user_context=user_context,
+        )
+        return result
+    except (HTTPException, LLMError):
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
+
+
+@app.post("/api/entry/interview-turn")
+async def api_entry_interview_turn(req: EntryInterviewTurnRequest):
+    """
+    Handle a single turn of the targeted context-extraction interview.
+    Accepts pre_identified_questions from the evaluation step.
     """
     try:
         client = LLMClient(_config)
-        questions = await generate_entry_questions(
+        turn_response = await chat_interview_turn(
             llm_client=client,
             section=req.section,
             entry=req.entry,
+            chat_history=req.chat_history,
+            user_context=req.user_context,
+            pre_identified_questions=req.pre_identified_questions,
         )
-        return {"entry_id": req.entry_id, "questions": questions}
+        return {
+            "entry_id": req.entry_id,
+            "reply_text": turn_response.get("reply_text"),
+            "confidence_score": turn_response.get("confidence_score"),
+            "ready_to_propose": turn_response.get("ready_to_propose"),
+        }
+    except (HTTPException, LLMError):
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Question generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Interview turn failed: {str(e)}")
 
 
 @app.post("/api/entry/improve")
@@ -594,13 +785,14 @@ async def api_entry_improve(req: ImproveEntryRequest):
     Rewrite all bullets in an entry using context answers.
     Returns: improved entry object + bullet-level diffs.
     """
+    await check_usage_limit(req.user_id)
     try:
         client = LLMClient(_config)
         improved_entry, bullet_diffs = await improve_entry(
             llm_client=client,
             entry=req.entry,
-            questions=req.questions,
-            answers=req.answers,
+            chat_history=req.chat_history,
+            user_context=req.user_context,
         )
         changed = any(d["changed"] for d in bullet_diffs)
         
@@ -624,3 +816,362 @@ async def api_entry_improve(req: ImproveEntryRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Entry improvement failed: {str(e)}")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# JD MATCHING PIPELINE — 3-Stage Intelligence Layer
+# ════════════════════════════════════════════════════════════════════════════════
+
+class JDAnalyzeRequest(BaseModel):
+    """Stage 1 — Score all resume entries against a JD."""
+    jd_text: str
+    jd_title: str = "Untitled Role"
+    jd_company: str = "Unknown Company"
+    user_id: str
+    context_id: Optional[int] = None
+
+class JDOptimizeRequest(BaseModel):
+    """Stage 2 — ATS-optimize the selected entries."""
+    jd_id: int
+    selected_entry_ids: List[str]   # e.g. ["exp_0", "proj_1"]
+    user_id: str
+    context_id: Optional[int] = None
+
+class JDGapsRequest(BaseModel):
+    """Stage 3 — Gap analysis."""
+    jd_id: int
+    user_id: str
+    context_id: Optional[int] = None
+
+class JDSuggestionActionRequest(BaseModel):
+    suggestion_id: int
+    user_id: str
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _get_profile_and_context(user_id: str, context_id: Optional[int]) -> Tuple[Dict, Dict]:
+    """Fetch profile data (experience+projects+skills) and user context from DB."""
+    with Session(_db_engine) as session:
+        profile_rec = session.exec(
+            select(MasterProfile).where(
+                MasterProfile.user_id == user_id,
+                MasterProfile.context_id == context_id,
+            )
+        ).first()
+        profile_data = profile_rec.data if profile_rec else {}
+
+        ctx_rec = session.exec(
+            select(UserContext).where(
+                UserContext.user_id == user_id,
+                UserContext.id == context_id,
+            )
+        ).first() if context_id else None
+        user_context = {}
+        if ctx_rec:
+            user_context = {**(ctx_rec.onboarding_context or {}), **(ctx_rec.chat_context or {})}
+
+    return profile_data, user_context
+
+
+def _build_entries_list(profile_data: Dict) -> List[Dict]:
+    """Flatten all resume sections into a unified entries list for evaluation/improvement."""
+    entries = []
+    
+    # 1. Summary
+    if profile_data.get("summary"):
+        entries.append({
+            "entry_id": "summary",
+            "type": "summary",
+            "content": profile_data.get("summary")
+        })
+
+    # 2. Experience & Experience-Projects
+    for i, exp in enumerate(profile_data.get("experience", [])):
+        entries.append({"entry_id": f"exp_{i}", **exp})
+        for j, proj in enumerate(exp.get("projects", [])):
+            entries.append({"entry_id": f"exp_{i}_proj_{j}", **proj})
+            
+    # 3. Independent Projects
+    for i, proj in enumerate(profile_data.get("projects", [])):
+        entries.append({"entry_id": f"proj_{i}", **proj})
+        
+    # 4. Achievements
+    if profile_data.get("achievements"):
+        entries.append({
+            "entry_id": "achievements",
+            "type": "achievements",
+            "bullets": profile_data.get("achievements")
+        })
+
+    return entries
+
+
+# ── Stage 1: Relevance Scoring ─────────────────────────────────────────────────
+
+@app.post("/api/jd/analyze")
+async def api_jd_analyze(req: JDAnalyzeRequest):
+    """
+    Stage 1 — Score all resume entries against the job description.
+    Creates a JobDescription record and returns scored entries with decisions.
+    """
+    await check_usage_limit(req.user_id)
+    try:
+        profile_data, user_context = _get_profile_and_context(req.user_id, req.context_id)
+        entries = _build_entries_list(profile_data)
+
+        if not entries:
+            raise HTTPException(status_code=400, detail="No resume entries found for this profile.")
+
+        # Create / persist the JD record
+        with Session(_db_engine) as session:
+            jd_record = JobDescription(
+                user_id=req.user_id,
+                context_id=req.context_id,
+                title=req.jd_title,
+                company=req.jd_company,
+                original_text=req.jd_text,
+                keywords=[],
+            )
+            session.add(jd_record)
+            session.commit()
+            session.refresh(jd_record)
+            jd_id = jd_record.id
+
+        client = LLMClient(_config)
+        scored = await run_relevance_scoring(client, req.jd_text, entries, user_context)
+        save_entry_scores(scored, jd_id, req.user_id, req.context_id, _db_engine)
+
+        return {
+            "jd_id": jd_id,
+            "total_entries": len(scored),
+            "entries": scored,
+            "summary": {
+                "keep": sum(1 for e in scored if e["decision"] == "KEEP"),
+                "optional": sum(1 for e in scored if e["decision"] == "OPTIONAL"),
+                "remove": sum(1 for e in scored if e["decision"] == "REMOVE"),
+            }
+        }
+    except (HTTPException, LLMError):
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"JD analysis failed: {str(e)}")
+
+
+# ── Stage 2: ATS Optimization ──────────────────────────────────────────────────
+
+@app.post("/api/jd/optimize")
+async def api_jd_optimize(req: JDOptimizeRequest):
+    """
+    Stage 2 — ATS-optimize selected resume entries against the JD.
+    Only processes KEEP + OPTIONAL entries selected by the user.
+    """
+    try:
+        with Session(_db_engine) as session:
+            jd_record = session.get(JobDescription, req.jd_id)
+            if not jd_record:
+                raise HTTPException(status_code=404, detail="JD not found.")
+            jd_text = jd_record.original_text
+
+            # Load previously scored entries from DB
+            from core.models import EntryScore
+            all_scores = session.exec(
+                select(EntryScore).where(
+                    EntryScore.jd_id == req.jd_id,
+                    EntryScore.user_id == req.user_id,
+                )
+            ).all()
+
+        score_map = {s.entry_id: s for s in all_scores}
+
+        profile_data, _ = _get_profile_and_context(req.user_id, req.context_id)
+        entries = _build_entries_list(profile_data)
+        entry_map = {e["entry_id"]: e for e in entries}
+
+        # Build payload for optimization: only selected entries
+        selected = []
+        for eid in req.selected_entry_ids:
+            if eid in entry_map:
+                score_rec = score_map.get(eid)
+                selected.append({
+                    "entry_id": eid,
+                    "entry": entry_map[eid],
+                    "matched_keywords": score_rec.matched_keywords if score_rec else [],
+                    "missing_keywords": score_rec.missing_keywords if score_rec else [],
+                })
+
+        if not selected:
+            raise HTTPException(status_code=400, detail="No valid entries found for the given IDs.")
+
+        client = LLMClient(_config)
+        optimized = await run_ats_optimization(client, jd_text, selected)
+        result_with_ids = save_optimization_suggestions(
+            optimized, req.jd_id, req.user_id, req.context_id, _db_engine
+        )
+
+        return {
+            "jd_id": req.jd_id,
+            "optimized_count": len(result_with_ids),
+            "suggestions": result_with_ids,
+        }
+    except (HTTPException, LLMError):
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ATS optimization failed: {str(e)}")
+
+
+# ── Stage 3: Gap Analysis ──────────────────────────────────────────────────────
+
+@app.post("/api/jd/gaps")
+async def api_jd_gaps(req: JDGapsRequest):
+    """
+    Stage 3 — Identify skill gaps between the JD and the candidate's resume.
+    """
+    try:
+        with Session(_db_engine) as session:
+            jd_record = session.get(JobDescription, req.jd_id)
+            if not jd_record:
+                raise HTTPException(status_code=404, detail="JD not found.")
+            jd_text = jd_record.original_text
+
+            from core.models import EntryScore
+            scored_recs = session.exec(
+                select(EntryScore).where(
+                    EntryScore.jd_id == req.jd_id,
+                    EntryScore.user_id == req.user_id,
+                )
+            ).all()
+
+        scored_list = [{
+            "entry_id": s.entry_id,
+            "score": s.score,
+            "decision": s.decision,
+            "reasoning": s.reasoning,
+        } for s in scored_recs]
+
+        profile_data, user_context = _get_profile_and_context(req.user_id, req.context_id)
+        entries = _build_entries_list(profile_data)
+        skills = profile_data.get("skills", {})
+
+        client = LLMClient(_config)
+        gap = await run_gap_analysis(client, jd_text, entries, skills, user_context, scored_list)
+        save_gap_analysis(gap, req.jd_id, req.user_id, req.context_id, _db_engine)
+
+        return {
+            "jd_id": req.jd_id,
+            **gap,
+        }
+    except (HTTPException, LLMError):
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gap analysis failed: {str(e)}")
+
+
+# ── Suggestion Actions ─────────────────────────────────────────────────────────
+
+@app.post("/api/jd/accept-suggestion")
+def api_jd_accept(req: JDSuggestionActionRequest):
+    """Accept a Stage 2 optimization suggestion."""
+    with Session(_db_engine) as session:
+        rec = session.get(OptimizationSuggestion, req.suggestion_id)
+        if not rec or rec.user_id != req.user_id:
+            raise HTTPException(status_code=404, detail="Suggestion not found.")
+        rec.status = "accepted"
+        session.add(rec)
+        session.commit()
+    return {"suggestion_id": req.suggestion_id, "status": "accepted"}
+
+
+@app.post("/api/jd/reject-suggestion")
+def api_jd_reject(req: JDSuggestionActionRequest):
+    """Reject a Stage 2 optimization suggestion."""
+    with Session(_db_engine) as session:
+        rec = session.get(OptimizationSuggestion, req.suggestion_id)
+        if not rec or rec.user_id != req.user_id:
+            raise HTTPException(status_code=404, detail="Suggestion not found.")
+        rec.status = "rejected"
+        session.add(rec)
+        session.commit()
+    return {"suggestion_id": req.suggestion_id, "status": "rejected"}
+
+
+# ── Cache Reader ───────────────────────────────────────────────────────────────
+
+@app.get("/api/jd/results/{jd_id}")
+def api_jd_results(jd_id: int, user_id: str):
+    """
+    Read all 3 stage results from DB for a given jd_id.
+    Returns None for stages that haven't been run yet.
+    Used to hydrate the UI without re-triggering LLM calls.
+    """
+    result = get_jd_results(jd_id, user_id, _db_engine)
+    if result is None:
+        raise HTTPException(status_code=404, detail="No results found for this JD. Run Stage 1 first.")
+    return {"jd_id": jd_id, **result}
+
+
+# ── Payment & Subscription ──────────────────────────────────────────────────
+
+@app.post("/api/payment/create-checkout-session")
+async def api_create_checkout_session(req: CheckoutSessionRequest):
+    svc = PaymentService()
+    try:
+        # Success and Cancel URLs - In production these should be absolute URLs
+        success_url = "http://localhost:3000/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}"
+        cancel_url = "http://localhost:3000/dashboard?canceled=true"
+        
+        session = svc.create_checkout_session(
+            user_id=req.user_id,
+            amount=req.amount,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+        return session
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/payment/webhook")
+async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
+    """
+    Handle Stripe webhooks to upgrade user status on successful payment.
+    Requires STRIPE_WEBHOOK_SECRET to be configured.
+    """
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+        
+    payload = await request.body()
+    svc = PaymentService()
+    
+    try:
+        event = svc.construct_webhook_event(payload.decode('utf-8'), stripe_signature)
+    except Exception as e:
+        # Signature verification failed or other construct_event errors
+        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
+        
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        user_id = session.get('metadata', {}).get('user_id')
+        
+        if user_id:
+            with Session(_db_engine) as db_session:
+                user = db_session.exec(select(User).where(User.id == user_id)).first()
+                if user:
+                    user.subscription_status = "active"
+                    user.free_runs_remaining = 999  # Provide unlimited runs
+                    db_session.add(user)
+                    db_session.commit()
+                    print(f"SUCCESS: User {user_id} upgraded to 'active' status via Stripe Webhook.")
+                    
+    return {"status": "success"}
+
+
+@app.get("/api/user/status/{user_id}")
+def get_user_status(user_id: str):
+    with Session(_db_engine) as session:
+        user = session.exec(select(User).where(User.id == user_id)).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {
+            "subscription_status": user.subscription_status,
+            "free_runs_remaining": user.free_runs_remaining
+        }

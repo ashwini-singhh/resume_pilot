@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+const cleanBullet = (text = '') => text.replace(/^[\s•\-\*›·◦▪▸→]+/, '').trim();
+
 export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpdateProfile }) {
   const [fontFam, setFontFam] = useState("Inter (Modern)");
   const [fontSz, setFontSz] = useState(11);
@@ -7,8 +9,8 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
   const [fitPage, setFitPage] = useState(false);
   const [dragOverIdx, setDragOverIdx] = useState(null);
 
-  const ALL_SECTIONS = ["Work Experience", "Projects", "Education", "Skills", "Certifications"];
-  const sectionOrder = profile.section_order || ALL_SECTIONS;
+  const ALL_SECTIONS = ["Work Experience", "Projects", "Education", "Skills", "Achievements"];
+  const sectionOrder = profile.preview_section_order || profile.section_order || ALL_SECTIONS;
 
   const handleToggleSection = (sec) => {
     let newOrder = [...sectionOrder];
@@ -18,7 +20,7 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
       // Add back in a reasonable place or just at the end
       newOrder.push(sec);
     }
-    onUpdateProfile({ ...profile, section_order: newOrder });
+    onUpdateProfile({ ...profile, preview_section_order: newOrder });
   };
 
   const handleDragStart = (e, idx) => {
@@ -31,7 +33,7 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
     const newOrder = [...sectionOrder];
     const [moved] = newOrder.splice(sourceIdx, 1);
     newOrder.splice(targetIdx, 0, moved);
-    onUpdateProfile({ ...profile, section_order: newOrder });
+    onUpdateProfile({ ...profile, preview_section_order: newOrder });
     setDragOverIdx(null);
   };
 
@@ -248,7 +250,7 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                            
                            {/* Render role-level bullets (Highlights) */}
                            {!isHidden && e.bullets?.map((b, bIdx) => (
-                             <div key={bIdx} className="r-bullet" style={{fontSize: `${12*scale}px`}}>{b}</div>
+                             <div key={bIdx} className="r-bullet" style={{fontSize: `${12*scale}px`}}>{cleanBullet(b)}</div>
                            ))}
 
                            {!isHidden && (e.projects || []).map((proj, pIdx) => {
@@ -269,7 +271,7 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                                  </button>
                                  <div style={{fontSize: `${13*scale}px`, fontWeight: 600, fontStyle: 'italic', color: '#4b5563'}}>{proj.name}</div>
                                  {!isHiddenProj && proj.bullets?.map((pb, pbIdx) => (
-                                   <div key={pbIdx} className="r-bullet" style={{fontSize: `${12*scale}px`, marginLeft: '12px'}}>{pb}</div>
+                                   <div key={pbIdx} className="r-bullet" style={{fontSize: `${12*scale}px`, marginLeft: '12px'}}>{cleanBullet(pb)}</div>
                                  ))}
                                </div>
                              );
@@ -320,7 +322,7 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                              <span>{p.name}</span>
                            </div>
                            {!isHidden && p.bullets?.map((b, bIdx) => (
-                             <div key={bIdx} className="r-bullet" style={{fontSize: `${13*scale}px`}}>{b}</div>
+                             <div key={bIdx} className="r-bullet" style={{fontSize: `${13*scale}px`}}>{cleanBullet(b)}</div>
                            ))}
                          </div>
                        );
@@ -340,11 +342,11 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                    </React.Fragment>
                  );
               }
-              if (sec.includes('Certifications') && (profile.certifications || []).length > 0) {
+              if (sec.includes('Achievements') && (profile.achievements || []).length > 0) {
                  return (
                    <React.Fragment key="cert">
-                     <div className="r-section" style={{fontSize: `${14*scale}px`}}>CERTIFICATIONS</div>
-                     {profile.certifications.map((c, idx) => (
+                     <div className="r-section" style={{fontSize: `${14*scale}px`}}>ACHIEVEMENTS</div>
+                     {profile.achievements.map((c, idx) => (
                        <div key={idx} style={{fontSize: `${13*scale}px`, marginBottom: '2px'}}>• {c}</div>
                      ))}
                    </React.Fragment>

@@ -2,6 +2,7 @@ import '../styles/globals.css';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
+import * as api from '../lib/api';
 
 // Pages that don't require authentication
 const PUBLIC_ROUTES = ['/', '/auth/callback'];
@@ -19,9 +20,8 @@ function MyApp({ Component, pageProps }) {
         router.replace('/');
       } else if (session) {
         try {
-          // Add cache busting to prevent stale status redirect loops
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/user/${session.user.id}/onboarding-status?t=${Date.now()}`);
-          const { is_onboarded } = await res.json();
+          // Use the API helper which handles AppResponse unwrapping
+          const { is_onboarded } = await api.getOnboardingStatus(session.user.id);
           
           // Allow /onboarding if they are explicitly asking for a 'new' profile
           const isNewProfileRequest = router.query.new === 'true';
@@ -45,8 +45,7 @@ function MyApp({ Component, pageProps }) {
         router.replace('/');
       } else if (event === 'SIGNED_IN' && session) {
         try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/user/${session.user.id}/onboarding-status?t=${Date.now()}`);
-          const { is_onboarded } = await res.json();
+          const { is_onboarded } = await api.getOnboardingStatus(session.user.id);
           if (!is_onboarded) {
              router.replace('/onboarding');
           } else if (router.pathname === '/' || router.pathname === '/onboarding') {

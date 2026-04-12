@@ -2,6 +2,7 @@ import asyncio
 from openai import AsyncOpenAI, RateLimitError, APIConnectionError, AuthenticationError
 from typing import Any, AsyncGenerator, Optional
 from .response import StreamEvent, StreamEventType, TokenUsage, TextDelta
+from util.response import LLMError
 
 
 class LLMClient:
@@ -125,48 +126,59 @@ class LLMClient:
     ) -> AsyncGenerator[StreamEvent, None]:
         stream = await client.chat.completions.create(**kwargs)
         async for chunk in stream:
-            if not chunk.choices:
+            if not getattr(chunk, "choices", None):
                 continue
-            delta = chunk.choices[0].delta
-            if delta.content:
+            
+            choice = chunk.choices[0]
+            if not choice:
+                continue
+                
+            delta = getattr(choice, "delta", None)
+            if delta and getattr(delta, "content", None):
                 yield StreamEvent(
                     type=StreamEventType.TEXT_DELTA,
                     text_delta=TextDelta(content=delta.content),
                 )
-            if chunk.choices[0].finish_reason:
+            
+            if getattr(choice, "finish_reason", None):
                 yield StreamEvent(
                     type=StreamEventType.MESSAGE_COMPLETE,
-                    finish_reason=chunk.choices[0].finish_reason,
+                    finish_reason=choice.finish_reason,
                 )
 
     async def _non_stream_response(
         self, client: AsyncOpenAI, kwargs: dict[str, Any]
     ) -> StreamEvent:
         response = await client.chat.completions.create(**kwargs)
+        
+        if not getattr(response, "choices", None):
+            return StreamEvent(
+                type=StreamEventType.ERROR,
+                error="LLM provider returned success but with 0 choices.",
+            )
+            
         choice = response.choices[0]
-        message = choice.message
+        message = getattr(choice, "message", None)
         text_delta = None
-        if message.content:
+        if message and getattr(message, "content", None):
             text_delta = TextDelta(content=message.content)
-
+            
         token_usage = None
-        if response.usage:
+        if getattr(response, "usage", None):
             token_usage = TokenUsage(
                 total_tokens=response.usage.total_tokens,
                 prompt_tokens=response.usage.prompt_tokens,
                 completion_tokens=response.usage.completion_tokens,
-                cached_tokens=(
-                    getattr(response.usage.prompt_tokens_details, "cached_tokens", 0)
-                    if hasattr(response.usage, "prompt_tokens_details")
-                    else 0
-                ),
+                cached_tokens=0 # Fallback
             )
+            if hasattr(response.usage, "prompt_tokens_details") and response.usage.prompt_tokens_details:
+                token_usage.cached_tokens = getattr(response.usage.prompt_tokens_details, "cached_tokens", 0)
 
         return StreamEvent(
             type=StreamEventType.MESSAGE_COMPLETE,
             text_delta=text_delta,
             usage=token_usage,
-            finish_reason=choice.finish_reason,
+            finish_reason=getattr(choice, "finish_reason", None),
         )
 
     async def generate_json(self, prompt: str, system_prompt: str = "", temperature: float = 0.1, max_tokens: int = 1024) -> Optional[dict]:
@@ -183,8 +195,15 @@ class LLMClient:
                 full_text = event.text_delta.content
                 break
             elif event.type == StreamEventType.ERROR:
-                print(f"LLM Error: {event.error}")
-                return None
+                # Capture the original error string which often includes the code
+                err_msg = event.error or "Unknown LLM Error"
+                code = 500
+                if "429" in err_msg or "rate limit" in err_msg.lower():
+                    code = 429
+                elif "401" in err_msg or "authentication" in err_msg.lower():
+                    code = 401
+                
+                raise LLMError(message=err_msg, code=code)
 
         if not full_text:
             return None
@@ -201,14 +220,28 @@ class LLMClient:
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            # Try to find JSON object in text
-            start = cleaned.find("{")
+            # Try to find JSON object or array in text
+            start_obj = cleaned.find("{")
+            start_arr = cleaned.find("[")
+            
+            # Find the first occurring valid structure
+            start = -1
+            if start_obj != -1 and start_arr != -1:
+                start = min(start_obj, start_arr)
+            elif start_obj != -1:
+                start = start_obj
+            elif start_arr != -1:
+                start = start_arr
+                
             if start != -1:
+                is_array = (cleaned[start] == "[")
+                open_char = "[" if is_array else "{"
+                close_char = "]" if is_array else "}"
                 depth = 0
                 for i in range(start, len(cleaned)):
-                    if cleaned[i] == "{":
+                    if cleaned[i] == open_char:
                         depth += 1
-                    elif cleaned[i] == "}":
+                    elif cleaned[i] == close_char:
                         depth -= 1
                         if depth == 0:
                             try:

@@ -89,7 +89,3 @@ cd frontend
 npm install
 npm run dev
 ```
-
----
-
-Developed as a senior-architected SaaS platform. **Launch ready.** 🏁✨

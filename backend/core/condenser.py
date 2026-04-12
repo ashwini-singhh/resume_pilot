@@ -18,31 +18,71 @@ from config.config import Config
 logger = logging.getLogger(__name__)
 
 CONDENSE_PROMPT = """
-You are an expert technical recruiter and resume data engineer.
-Your goal is to parse and merge raw data from multiple sources into a single, highly structured, canonical Master Profile JSON.
+You are a resume data extraction engineer. Your ONLY job is to parse raw resume text into structured JSON.
 
-CRITICAL INSTRUCTIONS:
-1. NESTED PROJECTS (MANDATORY):
-   - DO NOT return a single massive list of bullets for long tenures.
-   - If the user has worked on distinct technical initiatives (e.g. "Rebuilt the ETL pipeline", "Migrated to Kubernetes"), you MUST group those into the "projects" array inside that experience entry.
-   - Use the top-level "bullets" array ONLY for general duties.
-   - This ensures Harvard-level clarity on impact.
-2. CERTIFICATIONS & ACHIEVEMENTS:
-   - "certifications" SHOULD include: Formal certificates, Awards, Honors, Competition wins (e.g. "Runner up in..."), and technical badges (e.g. "3-star Leetcode").
-3. Deduplicate and group skills under logical categories.
-4. Unify work history and education. Merge duplicates intelligently.
-5. DO NOT hallucinate.
-6. Output strict JSON matching the schema below.
-7. PDF SOURCE OF TRUTH: If PDF_RESUME_TEXT is provided, it is the absolute source of truth for Education school names, degree titles, and years. Favor its accuracy over any existing data in CURRENT_MASTER_PROFILE for these details.
+⚠️ ABSOLUTE RULE — COPY, DO NOT REWRITE:
+- Copy ALL bullet points EXACTLY as written in the source text.
+- DO NOT improve, rephrase, shorten, expand, or paraphrase any bullet.
+- DO NOT add metrics, action verbs, or any content not present in the source.
+- DO NOT "clean up" or "strengthen" language.
+- Preserve the EXACT wording, including typos, abbreviations, and formatting.
+- Bullets are sacred — they will be improved later in a separate step.
+
+STRUCTURAL INSTRUCTIONS:
+
+1. EXPERIENCE ENTRY STRUCTURE — READ THIS CAREFULLY:
+   Many resumes use bold or italic sub-headings WITHIN a job role to group project clusters.
+   
+   PATTERN TO RECOGNIZE:
+   ```
+   Senior Software Engineer          Jul. 2022 – Present
+   Tiger Analytics
+   
+   IoT Event Processing & Distributed Systems (AWS, EC2, SQS, DLQ)   ← this is a sub-heading (bold/italic)
+     • Architected and scaled a high-throughput IoT ingestion platform...
+     • Designed a decoupled, queue-backed architecture...
+   
+   Backend Engineering & Cloud Optimization (Python, GCP, BigQuery)   ← another sub-heading
+     • Developed scalable backend services...
+     • Implemented SQL-driven optimization algorithms...
+   ```
+
+   HOW TO PARSE THIS PATTERN:
+   - The sub-headings (bold/italic lines that are NOT bullet points) → become "projects" entries NESTED inside that experience.
+   - The bullet points BELOW each sub-heading → become "bullets" of that nested project.
+   - The experience-level "bullets" array should only contain bullets that appear directly under the company/title, BEFORE any sub-heading.
+   - If ALL bullets are grouped under sub-headings, the experience "bullets" array may be empty [].
+   
+   ❌ WRONG — treating sub-headings as bullets:
+   "bullets": ["IoT Event Processing & Distributed Systems (AWS, EC2, SQS, DLQ)", "Backend Engineering..."]
+   
+   ✅ CORRECT — recognizing them as nested project names:
+   "projects": [
+     {"name": "IoT Event Processing & Distributed Systems (AWS, EC2, SQS, DLQ)", "bullets": ["Architected...", "Designed..."]},
+     {"name": "Backend Engineering & Cloud Optimization (Python, GCP, BigQuery)", "bullets": ["Developed...", "Implemented..."]}
+   ]
+
+2. PROJECTS SECTION MAPPING:
+   - TOP-LEVEL "projects" array: For any section in the resume explicitly titled "Projects", "Personal Projects", "Side Projects", or "Open Source".
+   - DO NOT move entries from the "Projects" section into any experience entry.
+   - DO NOT move entries from the "Projects" section into experience sub-projects.
+   - The section-level heading ("PROJECTS", "EXPERIENCE") is the definitive signal — not dates or tech stack.
+
+3. ACHIEVEMENTS: Include formal certificates, awards, honors, competition wins, and technical badges.
+4. Deduplicate and group skills under logical categories. Skill names should be copied exactly.
+5. Unify work history and education. If two sources describe the same company/role, merge without duplication.
+6. DO NOT hallucinate any data not present in the source text.
+7. Output strict JSON matching the schema below.
+8. PDF SOURCE OF TRUTH: If PDF_RESUME_TEXT is provided, treat it as the highest-priority source. Its wording takes precedence over CURRENT_MASTER_PROFILE.
 
 Output JSON Schema:
 {
   "name": "Full Name",
-  "summary": "High-impact 2-3 sentence professional summary.",
+  "summary": "Copy the summary/objective from the resume verbatim. If none, leave empty string.",
   "email": "Email address",
   "phone": "Phone",
   "location": "Location",
-  "links": ["LinkedIn URL", "GitHub URL", ...],
+  "links": ["LinkedIn URL", "GitHub URL"],
   "skills": {
     "Category Name": ["Skill 1", "Skill 2"]
   },
@@ -51,31 +91,31 @@ Output JSON Schema:
       "company": "Company Name",
       "title": "Job Title",
       "period": "Date Range",
-      "bullets": ["High-level responsibility/achievement"],
+      "bullets": ["COPY VERBATIM from source — do not rewrite"],
       "projects": [
         {
-          "name": "Specific Project Name",
-          "bullets": ["Project achievement with quantification"]
+          "name": "Project Name exactly as in source",
+          "bullets": ["COPY VERBATIM from source — do not rewrite"]
         }
       ]
     }
   ],
   "projects": [
     {
-      "name": "Standalone Project Name",
-      "bullets": ["Achievement 1", "Achievement 2"]
+      "name": "Project Name exactly as in source",
+      "bullets": ["COPY VERBATIM from source — do not rewrite"]
     }
   ],
   "education": [
     {
-      "school": "University",
-      "degree": "Degree",
+      "school": "University name exactly as in source",
+      "degree": "Degree exactly as in source",
       "period": "Date Range",
-      "gpa": "GPA"
+      "gpa": "GPA if present"
     }
   ],
-  "certifications": ["Certification, Award, or Achievement 1", "Achievement 2"],
-  "section_order": ["Work Experience", "Projects", "Education", "Skills", "Certifications"]
+  "achievements": ["Copy verbatim from source"],
+  "section_order": ["Work Experience", "Projects", "Education", "Skills", "Achievements"]
 }
 
 RAW DATA SOURCES TO MERGE:
@@ -108,11 +148,6 @@ async def condense_sources_into_profile(
 
     logger.info("Triggering LLM Condensation Pipeline...")
     merged_json = await agent.parse_content(content=prompt, user_context=user_context)
-
-    if not merged_json:
-        logger.error("Failed to parse JSON from LLM")
-        return current_profile or {}
-
     return merged_json
 
 
@@ -154,7 +189,7 @@ async def trigger_condensation_and_save(
         
         # Preserve section_order
         if "section_order" not in new_data or not new_data["section_order"]:
-            new_data["section_order"] = current_data.get("section_order", ["Work Experience", "Projects", "Education", "Skills", "Certifications"])
+            new_data["section_order"] = current_data.get("section_order", ["Work Experience", "Projects", "Education", "Skills", "Achievements"])
             
         if profile:
             profile.data = new_data

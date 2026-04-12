@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import * as api from '../lib/api';
 
-export default function Sidebar({ githubSyncData, setGithubSyncData, profiles, activeContextId, onSwitchProfile, onNewProfile, onDeleteProfile }) {
+export default function Sidebar(props) {
+  const { userId, githubSyncData, setGithubSyncData, profiles, activeContextId, onSwitchProfile, onNewProfile, onDeleteProfile } = props;
   const [ghUrl, setGhUrl] = useState('');
   const [ghToken, setGhToken] = useState('');
   const [maxRepos, setMaxRepos] = useState(8);
@@ -8,7 +10,25 @@ export default function Sidebar({ githubSyncData, setGithubSyncData, profiles, a
   const [syncStep, setSyncStep] = useState(0); // 0 = ready, 1 = fetched, 2 = extracted
 
   const [manualText, setManualText] = useState('');
-  const [openSection, setOpenSection] = useState(null); // 'github' | 'context' | null
+  const [openSection, setOpenSection] = useState(null); // 'github' | 'context' | 'diagnostic' | null
+
+  // Diagnostic State
+  const [diagnosticData, setDiagnosticData] = useState(null);
+  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState(null);
+
+  const handleRunDiagnostic = async () => {
+    if (!userId || !activeContextId) return;
+    setDiagnosticLoading(true);
+    setDiagnosticError(null);
+    try {
+      const res = await api.runGlobalDiagnostic({ userId, contextId: activeContextId });
+      setDiagnosticData(res);
+    } catch (e) {
+      setDiagnosticError(e.message);
+    }
+    setDiagnosticLoading(false);
+  };
 
   const handleFetchRepos = async () => {
     if (!ghUrl) return alert("Enter GitHub URL");
@@ -196,6 +216,77 @@ export default function Sidebar({ githubSyncData, setGithubSyncData, profiles, a
             style={{ fontSize: '12px' }}
           />
           <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => { alert("Context merged!"); setOpenSection(null); }}>Merge Context</button>
+        </div>
+      </div>
+
+      {/* Global Diagnostic Expander */}
+      <div className={`sidebar-expander ${openSection === 'diagnostic' ? 'is-open' : ''}`}>
+        <div className="sidebar-expander-header" onClick={() => setOpenSection(openSection === 'diagnostic' ? null : 'diagnostic')}>
+          <span className="mat-icon" style={{ color: '#ef4444' }}>troubleshoot</span> Industry Diagnostic
+        </div>
+        <div className="sidebar-expander-content" style={{ padding: '12px' }}>
+          {!diagnosticData ? (
+             <div className="flex-column gap-2" style={{ alignItems: 'center', textAlign: 'center', margin: '10px 0' }}>
+                <span className="mat-icon" style={{ fontSize: '32px', color: 'var(--muted-foreground)' }}>analytics</span>
+                <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '8px' }}>
+                   Analyze your entire resume against industry standards for your target role.
+                </p>
+                <button className="btn btn-primary" style={{ width: '100%', background: '#ef4444' }} onClick={handleRunDiagnostic} disabled={diagnosticLoading}>
+                  {diagnosticLoading ? "Analyzing..." : "Analyze Resume"}
+                </button>
+                {diagnosticError && <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '8px' }}>{diagnosticError}</div>}
+             </div>
+          ) : (
+             <div className="flex-column gap-2">
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px', background: 'var(--muted)', padding: '12px', borderRadius: '8px' }}>
+                   <div style={{ position: 'relative', width: '48px', height: '48px', borderRadius: '50%', background: `conic-gradient(#ef4444 ${(diagnosticData.competitiveness_score/10)*360}deg, #e5e7eb 0deg)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 700, color: '#ef4444' }}>
+                        {diagnosticData.competitiveness_score}
+                      </div>
+                   </div>
+                   <div>
+                     <div style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--muted-foreground)', fontWeight: 600, letterSpacing: '0.05em' }}>Competitiveness</div>
+                     <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--foreground)' }}>{diagnosticData.market_position}</div>
+                   </div>
+                </div>
+
+                <div style={{ fontSize: '12px', lineHeight: 1.5, color: 'var(--foreground)', marginBottom: '12px' }}>
+                  {diagnosticData.executive_summary}
+                </div>
+
+                {diagnosticData.missing_skills?.length > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: '6px' }}>MISSING SKILLS</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {diagnosticData.missing_skills.map((s, i) => (
+                        <span key={i} style={{ background: '#fee2e2', color: '#991b1b', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 500 }}>
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {diagnosticData.weak_areas?.length > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: '6px' }}>WEAK AREAS</div>
+                    <div className="flex-column gap-2">
+                      {diagnosticData.weak_areas.map((w, i) => (
+                        <div key={i} style={{ background: '#fff', border: '1px solid #fee2e2', padding: '8px', borderRadius: '6px' }}>
+                           <div style={{ fontSize: '11px', fontWeight: 600, color: '#991b1b', marginBottom: '4px' }}>{w.area}</div>
+                           <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', lineHeight: 1.4 }}>{w.issue}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button className="btn" style={{ width: '100%', marginTop: '8px' }} onClick={handleRunDiagnostic} disabled={diagnosticLoading}>
+                  {diagnosticLoading ? "Recalculating..." : "Refresh Diagnostic"}
+                </button>
+             </div>
+          )}
         </div>
       </div>
 

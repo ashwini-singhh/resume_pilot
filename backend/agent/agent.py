@@ -14,6 +14,7 @@ from config.config import Config
 from core.llm_client.llm_client import LLMClient
 from core.llm_client.response import StreamEventType
 from prompts.system import get_prompt_user_profile_generation
+from util.response import LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +65,16 @@ class Agent:
         async for event in self.llm_client.chat_completion(messages):
             if event.type == StreamEventType.TEXT_DELTA and event.text_delta:
                 full_text += event.text_delta.content
-            elif event.type == StreamEventType.MESSAGE_COMPLETE and event.text_delta:
-                if event.text_delta:
+            elif event.type == StreamEventType.MESSAGE_COMPLETE:
+                # If we're not streaming, the content might be here
+                if event.text_delta and not full_text:
                     full_text = event.text_delta.content
             elif event.type == StreamEventType.ERROR:
-                raise RuntimeError(event.error)
+                raise LLMError(message=f"LLM Stream Error: {event.error}", code=500, details={"error": event.error})
+        
+        if not full_text.strip():
+            logger.error("LLM returned an empty or whitespace-only response")
+            
         return full_text
 
     async def parse_content(self, content: str, user_context: dict = None) -> Dict | None:
@@ -87,9 +93,14 @@ class Agent:
         try:
             res_text = await self._get_full_response(prompt)
             logger.info(f"--- LLM Response Received ({len(res_text)} chars) ---")
-            return self._parse_json(res_text)
+            parsed = self._parse_json(res_text)
+            if parsed is None:
+                raise LLMError(message="LLM returned invalid JSON format", code=500, details={"raw_response": res_text})
+            return parsed
+        except LLMError:
+            raise
         except Exception as e:
             logger.error(f"--- Error in Agent.parse_content: {e} ---")
             if "timeout" in str(e).lower():
                 logger.error("--- Error was an AI timeout. Model might be slow or overloaded. ---")
-            return None
+            raise LLMError(message=str(e), code=500)

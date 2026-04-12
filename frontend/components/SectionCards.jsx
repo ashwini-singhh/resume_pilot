@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import EntryImprover from './EntryImprover';
 import ImpactScoreBadge from './ImpactScoreBadge';
 
+// Strip leading bullet characters copied verbatim from PDF (•, -, *, ›, ·, ◦, ▪)
+const cleanBullet = (text = '') => text.replace(/^[\s•\-\*›·◦▪▸→]+/, '').trim();
+
 // Shared Skill Tag component
 export function SkillTags({ skills }) {
   if (!skills) return null;
@@ -72,8 +75,40 @@ export function PersonalInfoCard({ profile, isEditing, onEditToggle, onChange })
 }
 
 // Professional Summary Card
-export function SummaryCard({ summary, isEditing, onEditToggle, onChange }) {
+export function SummaryCard({ 
+  summary, 
+  isEditing, 
+  onEditToggle, 
+  onChange, 
+  onGenerate, 
+  isGenerating,
+  score,
+  reasons,
+  userId,
+  contextId,
+  userContext
+}) {
   const [tempData, setTempData] = useState(summary);
+  const [improvingEntry, setImprovingEntry] = useState(null);
+
+  if (improvingEntry) {
+    return (
+      <EntryImprover 
+        entry={improvingEntry.entry}
+        entryId={improvingEntry.entryId}
+        section="summary"
+        userId={userId}
+        contextId={contextId}
+        userContext={userContext}
+        onClose={() => setImprovingEntry(null)}
+        onAccepted={(improved) => {
+          onChange({ summary: improved.summary || improved.content || improved.bullets?.[0] || summary });
+          setImprovingEntry(null);
+        }}
+      />
+    );
+  }
+
 
   if (isEditing) {
     return (
@@ -104,19 +139,35 @@ export function SummaryCard({ summary, isEditing, onEditToggle, onChange }) {
         <div className="card-title">
           <span className="mat-icon">description</span> Professional Summary
         </div>
-        <button className="card-edit" onClick={() => onEditToggle('Summary')}>
-          <span className="mat-icon">edit</span>
-        </button>
+        <div className="flex-row gap-2">
+          {(!summary || summary.trim() === '') && onGenerate && (
+            <button onClick={onGenerate} className="btn-fix-icon" style={{ borderRadius: '6px', width: 'auto', padding: '0 8px' }} disabled={isGenerating}>
+              <span className="mat-icon" style={{ fontSize: '13px' }}>auto_awesome</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, marginLeft: '4px' }}>{isGenerating ? "Writing..." : "Auto-Write"}</span>
+            </button>
+          )}
+          <button className="card-edit" onClick={() => onEditToggle('Summary')}>
+            <span className="mat-icon">edit</span>
+          </button>
+        </div>
       </div>
-      <p style={{ fontSize: '13px', color: 'var(--foreground)', fontStyle: 'italic', lineHeight: 1.5, margin: 0 }}>
-        {summary || "No summary provided. Add a brief profile highlight here."}
+      
+      <ImpactScoreBadge
+        score={score ?? null}
+        loading={score === undefined && summary?.length > 0}
+        reasons={reasons}
+        onImprove={() => setImprovingEntry({ entry: { content: summary }, entryId: 'summary' })}
+      />
+
+      <p style={{ fontSize: '13px', color: 'var(--foreground)', fontStyle: 'italic', lineHeight: 1.5, margin: '10px 0 0 0' }}>
+        {summary || "No summary provided. Click 'Auto-Write' to generate one using AI based on your experience."}
       </p>
     </div>
   );
 }
 
 // Work Experience Card
-export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, onChange, onEntryImproved }) {
+export function WorkExperienceCard({ experience = [], userContext, userId, contextId, isEditing, onEditToggle, onChange, onEntryImproved }) {
   const [improvingEntry, setImprovingEntry] = useState(null); // { entry, entryId, idx }
   const [tempData, setTempData] = useState(JSON.parse(JSON.stringify(experience)));
 
@@ -249,25 +300,29 @@ export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, o
   };
 
   return (
-    <div className="section-card">
+    <>
       {improvingEntry && (
         <EntryImprover
           entry={improvingEntry.entry}
           entryId={improvingEntry.entryId}
           section="experience"
+          userContext={userContext}
+          userId={userId}
+          contextId={contextId}
           onAccept={handleAcceptEntry}
           onClose={() => setImprovingEntry(null)}
         />
       )}
-      <div className="card-header">
-        <div className="card-title">
-          <span className="mat-icon">work</span> Work Experience
+      <div className="section-card">
+        <div className="card-header">
+          <div className="card-title">
+            <span className="mat-icon">work</span> Work Experience
+          </div>
+          <button className="card-edit" onClick={() => onEditToggle('Work Experience')}>
+            <span className="mat-icon">edit</span>
+          </button>
         </div>
-        <button className="card-edit" onClick={() => onEditToggle('Work Experience')}>
-          <span className="mat-icon">edit</span>
-        </button>
-      </div>
-      {experience.length === 0 ? <p style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>No experience added.</p> : null}
+        {experience.length === 0 ? <p style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>No experience added.</p> : null}
       {experience.map((exp, idx) => {
         const eid = `exp_${idx}`;
         return (
@@ -298,7 +353,7 @@ export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, o
                 {exp.bullets.map((b, bIdx) => (
                   <li key={bIdx} style={{display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '4px'}}>
                     <span style={{color: 'var(--accent)', marginTop: '2px', flexShrink: 0}}>•</span>
-                    <span style={{flex: 1, color: 'var(--foreground)'}}>{b}</span>
+                    <span style={{flex: 1, color: 'var(--foreground)'}}>{cleanBullet(b)}</span>
                   </li>
                 ))}
               </ul>
@@ -336,7 +391,7 @@ export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, o
                     {proj.bullets?.map((pb, pbIdx) => (
                       <li key={pbIdx} style={{display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '4px'}}>
                         <span style={{color: 'var(--accent)', marginTop: '2px', flexShrink: 0}}>›</span>
-                        <span style={{flex: 1, color: 'var(--foreground)', fontStyle: 'italic'}}>{pb}</span>
+                        <span style={{flex: 1, color: 'var(--foreground)', fontStyle: 'italic'}}>{cleanBullet(pb)}</span>
                       </li>
                     ))}
                   </ul>
@@ -347,11 +402,12 @@ export function WorkExperienceCard({ experience = [], isEditing, onEditToggle, o
         );
       })}
     </div>
+    </>
   );
 }
 
 // Projects Card
-export function ProjectsCard({ projects = [], isEditing, onEditToggle, onChange, onEntryImproved }) {
+export function ProjectsCard({ projects = [], userContext, userId, contextId, isEditing, onEditToggle, onChange, onEntryImproved }) {
   const [improvingEntry, setImprovingEntry] = useState(null);
   const [tempData, setTempData] = useState(JSON.parse(JSON.stringify(projects)));
 
@@ -413,21 +469,25 @@ export function ProjectsCard({ projects = [], isEditing, onEditToggle, onChange,
   }
 
   return (
-    <div className="section-card">
+    <>
       {improvingEntry && (
         <EntryImprover
           entry={improvingEntry.entry}
           entryId={improvingEntry.entryId}
           section="projects"
+          userContext={userContext}
+          userId={userId}
+          contextId={contextId}
           onAccept={handleAcceptEntry}
           onClose={() => setImprovingEntry(null)}
         />
       )}
-      <div className="card-header">
-        <div className="card-title"><span className="mat-icon">folder</span> Projects</div>
-        <button className="card-edit" onClick={() => onEditToggle('Projects')}><span className="mat-icon">edit</span></button>
-      </div>
-      {projects.map((proj, idx) => {
+      <div className="section-card">
+        <div className="card-header">
+          <div className="card-title"><span className="mat-icon">folder</span> Projects</div>
+          <button className="card-edit" onClick={() => onEditToggle('Projects')}><span className="mat-icon">edit</span></button>
+        </div>
+        {projects.map((proj, idx) => {
         return (
           <div key={idx} style={{
             marginBottom: '16px',
@@ -448,7 +508,7 @@ export function ProjectsCard({ projects = [], isEditing, onEditToggle, onChange,
               {proj.bullets?.map((b, i) => (
                 <li key={i} style={{display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '3px'}}>
                   <span style={{color: '#dc2626', marginTop: '2px', flexShrink: 0}}>•</span>
-                  <span style={{flex: 1, color: 'var(--foreground)'}}>{b}</span>
+                  <span style={{flex: 1, color: 'var(--foreground)'}}>{cleanBullet(b)}</span>
                 </li>
               ))}
             </ul>
@@ -456,6 +516,7 @@ export function ProjectsCard({ projects = [], isEditing, onEditToggle, onChange,
         );
       })}
     </div>
+    </>
   );
 }
 
@@ -524,7 +585,7 @@ export function EducationCard({ education = [], isEditing, onEditToggle, onChang
 }
 
 // Skills Card
-export function SkillsCard({ skills = {}, isEditing, onEditToggle, onChange }) {
+export function SkillsCard({ skills = {}, isEditing, onEditToggle, onChange, onGenerate, isGenerating }) {
   const [tempData, setTempData] = useState(JSON.parse(JSON.stringify(skills)));
 
   const handleCategoryChange = (oldCat, newCat) => {
@@ -593,24 +654,66 @@ export function SkillsCard({ skills = {}, isEditing, onEditToggle, onChange }) {
     <div className="section-card">
       <div className="card-header">
         <div className="card-title"><span className="mat-icon">bolt</span> Skills</div>
-        <button className="card-edit" onClick={() => onEditToggle('Skills')}><span className="mat-icon">edit</span></button>
+        <div className="flex-row gap-2">
+          {Object.keys(skills || {}).length === 0 && onGenerate && (
+            <button onClick={onGenerate} className="btn-fix-icon" style={{ borderRadius: '6px', width: 'auto', padding: '0 8px' }} disabled={isGenerating}>
+              <span className="mat-icon" style={{ fontSize: '13px' }}>auto_awesome</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, marginLeft: '4px' }}>{isGenerating ? "Generating..." : "Auto-Generate"}</span>
+            </button>
+          )}
+          <button className="card-edit" onClick={() => onEditToggle('Skills')}><span className="mat-icon">edit</span></button>
+        </div>
       </div>
-      <SkillTags skills={skills} />
+      {Object.keys(skills || {}).length === 0 ? (
+        <div style={{fontSize: '12px', color: 'var(--muted-foreground)', fontStyle: 'italic'}}>No skills added. Click 'Auto-Generate' to let AI infer them from your experience.</div>
+      ) : (
+        <SkillTags skills={skills} />
+      )}
     </div>
   );
 }
 
-// Certifications Card
-export function CertificationsCard({ certifications = [], isEditing, onEditToggle, onChange }) {
-  const [tempData, setTempData] = useState(certifications.join('\n'));
+// Achievements Card
+export function AchievementsCard({ 
+  achievements = [], 
+  isEditing, 
+  onEditToggle, 
+  onChange,
+  score,
+  reasons,
+  userId,
+  contextId,
+  userContext
+}) {
+  const [tempData, setTempData] = useState(achievements.join('\n'));
+  const [improvingEntry, setImprovingEntry] = useState(null);
+
+  if (improvingEntry) {
+    return (
+      <EntryImprover 
+        entry={improvingEntry.entry}
+        entryId={improvingEntry.entryId}
+        section="achievements"
+        userId={userId}
+        contextId={contextId}
+        userContext={userContext}
+        onClose={() => setImprovingEntry(null)}
+        onAccepted={(improved) => {
+          onChange({ achievements: improved.bullets || improved.achievements || achievements });
+          setImprovingEntry(null);
+        }}
+      />
+    );
+  }
+
 
   if (isEditing) {
     return (
       <div className="section-card animate-in">
         <div className="card-title" style={{marginBottom: '12px'}}>
-          <span className="mat-icon">workspace_premium</span> Edit Certifications
+          <span className="mat-icon">workspace_premium</span> Edit Achievements
         </div>
-        <label className="form-label">Certifications / Awards (One per line)</label>
+        <label className="form-label">Achievements / Awards (One per line)</label>
         <textarea 
            rows="6" 
            value={tempData} 
@@ -619,10 +722,10 @@ export function CertificationsCard({ certifications = [], isEditing, onEditToggl
            placeholder="AWS Certified Solution Architect&#10;3-star Leetcode Problem Solver"
         />
         <div className="flex-between" style={{marginTop: '16px'}}>
-          <button className="btn" onClick={() => { setTempData(certifications.join('\n')); onEditToggle(null); }}>Cancel</button>
+          <button className="btn" onClick={() => { setTempData(achievements.join('\n')); onEditToggle(null); }}>Cancel</button>
           <button className="btn btn-primary" onClick={() => { 
             const list = tempData.split('\n').map(l => l.trim()).filter(l => l);
-            onChange({ certifications: list }); 
+            onChange({ achievements: list }); 
             onEditToggle(null); 
           }}>Save</button>
         </div>
@@ -633,13 +736,25 @@ export function CertificationsCard({ certifications = [], isEditing, onEditToggl
   return (
     <div className="section-card">
       <div className="card-header">
-        <div className="card-title"><span className="mat-icon">workspace_premium</span> Certifications</div>
-        <button className="card-edit" onClick={() => onEditToggle('Certifications')}><span className="mat-icon">edit</span></button>
+        <div className="card-title"><span className="mat-icon">workspace_premium</span> Achievements</div>
+        <button className="card-edit" onClick={() => onEditToggle('Achievements')}>
+          <span className="mat-icon">edit</span>
+        </button>
       </div>
-      {certifications.length === 0 && <p style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>No certifications.</p>}
-      {certifications.map((c, idx) => (
-        <div key={idx} style={{fontSize: '12px', color: 'var(--foreground)', marginBottom: '4px'}}>• {c}</div>
-      ))}
+
+      <ImpactScoreBadge
+        score={score ?? null}
+        loading={score === undefined && achievements.length > 0}
+        reasons={reasons}
+        onImprove={() => setImprovingEntry({ entry: { bullets: achievements }, entryId: 'achievements' })}
+      />
+
+      {achievements.length === 0 && <p style={{fontSize: '12px', color: 'var(--muted-foreground)', marginTop: '8px'}}>No achievements.</p>}
+      <div style={{ marginTop: '10px' }}>
+        {achievements.map((c, idx) => (
+          <div key={idx} style={{fontSize: '12px', color: 'var(--foreground)', marginBottom: '4px'}}>• {c}</div>
+        ))}
+      </div>
     </div>
   );
 }
