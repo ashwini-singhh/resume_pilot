@@ -20,13 +20,13 @@ class LLMClient:
     def __init__(self, config=None, *, api_key: str = "", base_url: str = "", model_name: str = ""):
         if config is not None:
             # Config-based initialization (legacy Agent pattern)
-            self.api_key = config.api_key or ""
+            self.api_key = (config.api_key or "").strip()
             self.base_url = (config.base_url or "").strip()
             self.model_name = config.model_name or "gemini-2.0-flash"
         else:
             # Direct initialization (API endpoint pattern)
-            self.api_key = api_key
-            self.base_url = base_url.strip()
+            self.api_key = (api_key or "").strip()
+            self.base_url = (base_url or "").strip()
             self.model_name = model_name or "gemini-2.0-flash"
 
         # Fallback base_url
