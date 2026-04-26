@@ -11,6 +11,9 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from prompts.improvement import GEMINI_OPTIMIZE_PROMPT
+from prompts.diagnostics import AUDIT_PROMPT
+
 from google import genai
 from google.genai import types
 
@@ -21,12 +24,7 @@ _MODULE_DIR = Path(__file__).resolve().parent
 _PROMPTS_DIR = _MODULE_DIR.parent / "prompts"
 
 
-def _load_prompt(filename: str) -> str:
-    """Load a prompt template from the prompts directory."""
-    prompt_path = _PROMPTS_DIR / filename
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-    return prompt_path.read_text(encoding="utf-8")
+# Note: _load_prompt is deprecated in favor of direct imports from prompts package
 
 
 def _get_client() -> genai.Client:
@@ -55,8 +53,7 @@ def optimize_bullet(bullet: str, keywords: List[str]) -> Dict:
     Returns:
         Dict with original, modified, keywords_added, change_type, confidence
     """
-    prompt_template = _load_prompt("gemini_prompt.txt")
-    system_prompt = _load_prompt("system_prompt.txt")
+    system_prompt = "You are an ATS resume optimizer. Maintain absolute truthfulness."
 
     # Format the prompt
     prompt = prompt_template.replace("{bullet}", bullet)
@@ -111,8 +108,8 @@ def audit_modification(
     Audit a bullet modification for hallucinations and faithfulness.
     Uses the audit prompt template.
     """
-    prompt_template = _load_prompt("audit_prompt.txt")
-    system_prompt = _load_prompt("system_prompt.txt")
+    prompt_template = AUDIT_PROMPT
+    system_prompt = "You are an expert resume auditor."
 
     prompt = prompt_template.replace("{original}", original)
     prompt = prompt.replace("{modified}", modified)

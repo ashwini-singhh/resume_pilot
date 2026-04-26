@@ -1,41 +1,65 @@
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '') + '/api';
 
+/**
+ * Standardized fetch helper to handle AppResponse structure
+ */
+async function request(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, options);
+  } catch (err) {
+    console.error('Fetch error:', err);
+    throw new Error('Backend server is unreachable. Please ensure it is running at ' + API_BASE);
+  }
+
+  if (res.status === 402) {
+    // Dispatch global event so the UI can pop up the Upgrade modal
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('show-upgrade-modal'));
+    }
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || 'Payment Required');
+  }
+
+  const json = await res.json();
+  
+  // Handle AppResponse structure
+  if (json && typeof json.success !== 'undefined') {
+    if (!json.success) {
+      const errorMsg = json.error || 'An unknown error occurred';
+      throw new Error(errorMsg);
+    }
+    return json.data;
+  }
+  
+  // Fallback for legacy endpoints or direct FastAPI errors
+  if (!res.ok) {
+    throw new Error(json?.detail || `Request failed with status ${res.status}`);
+  }
+  return json;
+}
+
 export async function parseResume(text) {
   const formData = new FormData();
   formData.append('text', text);
-
-  const res = await fetch(`${API_BASE}/parse-resume`, {
+  return request('/parse-resume', {
     method: 'POST',
     body: formData,
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 export async function parseResumeFile(file) {
   const formData = new FormData();
   formData.append('file', file);
-
-  const res = await fetch(`${API_BASE}/parse-resume`, {
+  return request('/parse-resume', {
     method: 'POST',
     body: formData,
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
-export async function analyzeJD(jobDescription, resumeBullets) {
-  const res = await fetch(`${API_BASE}/analyze-jd`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ job_description: jobDescription, resume_bullets: resumeBullets }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
 export async function generateSuggestions(bullets, targetKeywords, llmConfig) {
-  const res = await fetch(`${API_BASE}/generate-suggestions`, {
+  return request('/generate-suggestions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -44,155 +68,160 @@ export async function generateSuggestions(bullets, targetKeywords, llmConfig) {
       ...llmConfig,
     }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 export async function applyChanges(suggestions, sections) {
-  const res = await fetch(`${API_BASE}/apply-changes`, {
+  return request('/apply-changes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ suggestions, sections }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 export async function condenseProfile(data) {
-  const res = await fetch(`${API_BASE}/condense`, {
+  return request('/condense', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 export async function getProfile(userId, contextId) {
   if (!userId || !contextId) throw new Error("userId and contextId are required for getProfile");
-  const res = await fetch(`${API_BASE}/profile/${userId}/${contextId}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return request(`/profile/${userId}/${contextId}`);
 }
 
 export async function getProfiles(userId) {
   if (!userId) throw new Error("userId is required for getProfiles");
-  const res = await fetch(`${API_BASE}/user/${userId}/onboarding-status`);
-  if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
+  const data = await request(`/user/${userId}/onboarding-status`);
   return data.profiles || [];
+}
+
+export async function getOnboardingStatus(userId) {
+  if (!userId) throw new Error("userId is required for getOnboardingStatus");
+  return request(`/user/${userId}/onboarding-status?t=${Date.now()}`);
 }
 
 export async function deleteProfile(userId, contextId) {
   if (!userId || !contextId) throw new Error("userId and contextId are required for deleteProfile");
-  const res = await fetch(`${API_BASE}/profile/${userId}/${contextId}`, {
+  return request(`/profile/${userId}/${contextId}`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 export async function deleteUser(userId) {
   if (!userId) throw new Error("userId is required for deleteUser");
-  const res = await fetch(`${API_BASE}/user/${userId}`, {
+  return request(`/user/${userId}`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 export async function saveProfile(profile, userId, contextId) {
   if (!userId || !contextId) throw new Error("userId and contextId are required for saveProfile");
-  const res = await fetch(`${API_BASE}/profile`, {
+  return request('/profile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile, user_id: userId, context_id: contextId }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+}
+
+export async function submitOnboarding(payload) {
+  return request('/user/onboarding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 // ── On-Demand Bullet Improvement ─────────────────────────────────────
 
 export async function generateImprovementQuestions({ run_id, section, bullet_text }) {
-  const res = await fetch(`${API_BASE}/improve/generate-questions`, {
+  return request('/improve/generate-questions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ run_id, section, bullet_text }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json(); // { questions: [...] }
 }
 
 export async function submitImprovementAnswers({ run_id, questions, answers, original_bullet }) {
-  const res = await fetch(`${API_BASE}/improve/submit-answers`, {
+  return request('/improve/submit-answers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ run_id, questions, answers, original_bullet }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 export async function generateImprovedBullet({ original_bullet, questions, answers, run_id, section }) {
-  const res = await fetch(`${API_BASE}/improve/generate-improvement`, {
+  return request('/improve/generate-improvement', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ original_bullet, questions, answers, run_id, section }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json(); // { original_bullet, improved_bullet, diff, suggestion_id, changed }
 }
 
 export async function acceptImprovement(suggestion_id) {
-  const res = await fetch(`${API_BASE}/improve/accept`, {
+  return request('/improve/accept', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ suggestion_id }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 export async function rejectImprovement(suggestion_id) {
-  const res = await fetch(`${API_BASE}/improve/reject`, {
+  return request('/improve/reject', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ suggestion_id }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 // ── Entry-Level Impact Scoring ─────────────────────────────────────────────
 
 export async function scoreEntries({ experience, projects }) {
-  const res = await fetch(`${API_BASE}/score-entries`, {
+  return request('/score-entries', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ experience, projects }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json(); // { experience: [...], projects: [...] }
 }
 
-export async function generateEntryQuestions({ section, entry, entry_id }) {
-  const res = await fetch(`${API_BASE}/entry/generate-questions`, {
+export async function runGlobalDiagnostic({ userId, contextId }) {
+  return request('/profile/diagnostic', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ section, entry, entry_id }),
+    body: JSON.stringify({ user_id: userId, context_id: contextId }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json(); // { entry_id, questions: [...] }
 }
 
-export async function improveEntry({ section, entry, entry_id, questions, answers }) {
-  const res = await fetch(`${API_BASE}/entry/improve`, {
+export async function generateSectionContent({ userId, contextId, section }) {
+  return request('/profile/generate-section', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ section, entry, entry_id, questions, answers }),
+    body: JSON.stringify({ user_id: userId, context_id: contextId, section }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json(); // { entry_id, original_entry, improved_entry, bullet_diffs, changed }
+}
+
+export async function evaluateEntry({ user_id, context_id, entry_id, section }) {
+  return request('/entry/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id, context_id, entry_id, section }),
+  });
+}
+
+export async function entryInterviewTurn({ section, entry, entry_id, chat_history, user_context, pre_identified_questions = [] }) {
+  return request('/entry/interview-turn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ section, entry, entry_id, chat_history, user_context, pre_identified_questions }),
+  });
+}
+
+export async function improveEntry({ section, entry, entry_id, chat_history, user_context }) {
+  return request('/entry/improve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ section, entry, entry_id, chat_history, user_context }),
+  });
 }
 
 
@@ -218,3 +247,113 @@ export async function executeExtractionPipeline(userId, contextId, file, text, c
 
   return result.profile;
 }
+
+
+export async function fetchGithubRepos(githubUrl, token = null) {
+  const params = new URLSearchParams({ url: githubUrl });
+  if (token) params.append('token', token);
+  return request(`/github/repos?${params}`);
+}
+
+export async function mergeGithubRepos({ userId, contextId, githubUrl, selectedRepoNames, token = null }) {
+  return request('/github/merge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      context_id: contextId,
+      github_url: githubUrl,
+      selected_repo_names: selectedRepoNames,
+      token
+    }),
+  });
+}
+
+
+
+// ── JD Matching Pipeline ────────────────────────────────────────────────────
+
+export async function analyzeJD({ jd_text, jd_title, jd_company, user_id, context_id }) {
+  return request('/jd/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jd_text, jd_title, jd_company, user_id, context_id }),
+  });
+}
+
+export async function optimizeEntries({ jd_id, selected_entry_ids, user_id, context_id }) {
+  return request('/jd/optimize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jd_id, selected_entry_ids, user_id, context_id }),
+  });
+}
+
+export async function analyzeGaps({ jd_id, user_id, context_id }) {
+  return request('/jd/gaps', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jd_id, user_id, context_id }),
+  });
+}
+
+export async function acceptJDSuggestion({ suggestion_id, user_id }) {
+  return request('/jd/accept-suggestion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ suggestion_id, user_id }),
+  });
+}
+
+export async function rejectJDSuggestion({ suggestion_id, user_id }) {
+  return request('/jd/reject-suggestion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ suggestion_id, user_id }),
+  });
+}
+
+export async function getJDResults(jd_id, user_id) {
+  const params = new URLSearchParams({ user_id });
+  return request(`/jd/results/${jd_id}?${params}`);
+}
+
+// ── Payment & Subscription ──────────────────────────────────────────────────
+
+export async function createCheckoutSession(userId, amount) {
+  return request('/payment/create-checkout-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, amount }),
+  });
+}
+
+export async function getUserStatus(userId) {
+  return request(`/user/status/${userId}`, { method: 'GET' });
+}
+
+export async function cloneProfile({ userId, profileName, profileData }) {
+  return request('/profiles/clone', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      profile_name: profileName,
+      profile_data: profileData
+    }),
+  });
+}
+
+export async function interviewTurn({ userId, contextId, sectionType, chatHistory }) {
+  return request('/interview/turn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      context_id: contextId,
+      section_type: sectionType,
+      chat_history: chatHistory
+    }),
+  });
+}
+

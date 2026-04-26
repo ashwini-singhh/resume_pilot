@@ -6,28 +6,28 @@ const easeOut = [0.16, 1, 0.3, 1];
 
 const points = [
   {
-    icon: 'blind',
-    title: 'Most candidates apply blindly',
-    desc: 'No idea if their resume matches the job. No score. No feedback. Just hope.',
+    icon: 'mail_outline',
+    title: '50+ applications, no response',
+    desc: 'You put in the hours, but get nothing but silence. You are likely being filtered by ATS bots before a human ever sees your name.',
     color: '#ef4444',
   },
   {
-    icon: 'analytics',
-    title: 'We show you your match score',
-    desc: 'A real, job-specific score generated from your resume against the actual JD.',
-    color: '#0052FF',
-  },
-  {
-    icon: 'construction',
-    title: 'We help you fix gaps first',
-    desc: "Identify missing keywords, experience mismatches, and weak bullets before you hit 'Apply'.",
+    icon: 'chat_bubble_outline',
+    title: 'Using ChatGPT, still getting rejected',
+    desc: 'Generic AI suggestions are easy to spot. Recruiter-facing AI can tell when your bullets are hallucinated fluff.',
     color: '#f59e0b',
   },
   {
-    icon: 'psychology_alt',
-    title: 'We highlight what recruiters care about',
-    desc: "Our AI knows what hiring managers prioritize. It puts the right things front and center.",
+    icon: 'help_outline',
+    title: 'Not knowing what is wrong',
+    desc: 'Applying blind is guesswork. Without a match score, you have no way to know why you were passed over.',
     color: '#8b5cf6',
+  },
+  {
+    icon: 'content_copy',
+    title: 'Sending same resume everywhere',
+    desc: 'The "spray and pray" method is dead. Modern hiring requires deep JD matching for every single role.',
+    color: '#0052FF',
   },
 ];
 
@@ -75,11 +75,11 @@ export default function WhyMoreInterviews() {
           margin: '0 0 14px', lineHeight: 1.1,
         }}
       >
-        Why You'll Get{' '}
+        The Hidden Truth About{' '}
         <span style={{
           background: 'linear-gradient(135deg, var(--accent), var(--accent-secondary))',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-        }}>More Interviews.</span>
+        }}>Modern Hiring.</span>
       </motion.h2>
 
       <motion.p

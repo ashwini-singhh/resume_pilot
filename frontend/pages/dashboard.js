@@ -4,7 +4,10 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import MasterProfile from '../components/MasterProfile';
 import ResumePreview from '../components/ResumePreview';
-import DiffText from '../components/DiffText';
+import UpgradeModal from '../components/UpgradeModal';
+import JDPipeline from '../components/JDPipeline';
+import GithubFlow from '../components/GithubFlow';
+import InterviewPanel from '../components/InterviewPanel';
 import * as api from '../lib/api';
 import { supabase } from '../lib/supabaseClient';
 
@@ -22,8 +25,9 @@ const DEFAULT_PROFILE = {
     "Tools": [],
     "Others": []
   },
-  certifications: [],
-  section_order: ["Work Experience", "Projects", "Education", "Skills", "Certifications"]
+  achievements: [],
+  section_order: ["Work Experience", "Projects", "Education", "Skills", "Achievements"],
+  preview_section_order: ["Work Experience", "Projects", "Education", "Skills", "Achievements"]
 };
 
 export default function AppIndex() {
@@ -38,6 +42,16 @@ export default function AppIndex() {
   const [profiles, setProfiles] = useState([]);
   const [activeContextId, setActiveContextId] = useState(null);
   const [githubSyncData, setGithubSyncData] = useState({ fetchedData: null, projects: [], newSkills: [] });
+  const [showInterview, setShowInterview] = useState(false);
+
+  const [userStatus, setUserStatus] = useState({ subscription_status: 'free', free_runs_remaining: 5 });
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  useEffect(() => {
+    const handleShowUpgrade = () => setShowUpgradeModal(true);
+    window.addEventListener('show-upgrade-modal', handleShowUpgrade);
+    return () => window.removeEventListener('show-upgrade-modal', handleShowUpgrade);
+  }, []);
 
   useEffect(() => {
     const initSession = async () => {
@@ -45,6 +59,12 @@ export default function AppIndex() {
       if (session?.user) {
         setUser(session.user);
         try {
+          // Fetch user payment limits
+          try {
+            const status = await api.getUserStatus(session.user.id);
+            setUserStatus(status);
+          } catch(e) { console.warn("Failed to fetch user payment status", e) }
+
           // 1. Fetch available personas
           const profileList = await api.getProfiles(session.user.id);
           setProfiles(profileList);
@@ -79,15 +99,7 @@ export default function AppIndex() {
     initSession();
   }, [router.pathname]);
 
-  // AI Optimize States
-  const [jdText, setJdText] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [llmConfig, setLlmConfig] = useState({
-    provider: "gemini",
-    api_key: "",
-    model: "gemini-2.0-flash"
-  });
 
   // Modals
   const [showUpload, setShowUpload] = useState(false);
@@ -152,25 +164,7 @@ export default function AppIndex() {
     return bullets;
   };
 
-  const handleRunAI = async () => {
-    const bullets = extractAllBullets(profile);
-    if (bullets.length === 0) return alert("Your profile has no bullet points to optimize.");
-    if (!jdText) return alert("Please paste a Job Description.");
-    if (!llmConfig.api_key) return alert("Please configure API Key in settings.");
 
-    setLoading(true);
-    try {
-      const analysis = await api.analyzeJD(jdText, bullets);
-      const targetKeywords = analysis.coverage?.uncovered_keywords?.slice(0, 10) || [];
-      const bulletsToOptimize = analysis.candidates?.map(c => c.bullet) || bullets.slice(0, 5);
-
-      const { suggestions } = await api.generateSuggestions(bulletsToOptimize, targetKeywords, llmConfig);
-      setSuggestions(suggestions.map(s => ({ ...s, status: 'pending' })));
-    } catch (e) {
-      alert("Error: " + e.message);
-    }
-    setLoading(false);
-  };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -179,12 +173,6 @@ export default function AppIndex() {
   };
 
   const handleExtract = async () => {
-    // 0. Usage Check
-    const count = Number(localStorage.getItem('usage_count') || 0);
-    if (count >= 5) {
-      return alert("Monthly limit reached (5/5). Upgrade to Premium to continue!");
-    }
-
     if (!uploadFile && !uploadText.trim()) {
       return alert("Please upload a PDF or paste resume text.");
     }
@@ -201,10 +189,9 @@ export default function AppIndex() {
         };
         setProfile(updatedProfile);
 
-        // Increment usage count if a file was actually processed
-        if (uploadFile) {
-          localStorage.setItem('usage_count', (count + 1).toString());
-        }
+        // Usage is now updated in DB, refresh status locally.
+        const status = await api.getUserStatus(user.id);
+        setUserStatus(status);
 
         setExtractionStep("Success!");
         setShowUpload(false);
@@ -253,34 +240,17 @@ export default function AppIndex() {
     }
   };
 
-  const handleApplyAIOptimizations = () => {
-    // Trivial application of accepted optimization back to profile state
-    let newProfile = JSON.parse(JSON.stringify(profile));
-    const acceptedMap = {};
-    suggestions.forEach(s => {
-      if (s.status === 'accepted' && s.original !== s.modified) {
-        acceptedMap[s.original] = s.modified;
-      }
-    });
 
-    (newProfile.experience || []).forEach(e => {
-      e.bullets = (e.bullets || []).map(b => acceptedMap[b] || b);
-    });
-    (newProfile.projects || []).forEach(p => {
-      p.bullets = (p.bullets || []).map(b => acceptedMap[b] || b);
-    });
-
-    setProfile(newProfile);
-    if (user && activeContextId) {
-      api.saveProfile(newProfile, user.id, activeContextId);
-    }
-    setSuggestions([]);
-    setActivePage('preview'); // jump to preview to see final
-  };
 
   return (
     <>
-      <Navbar activePage={activePage} setActivePage={setActivePage} onOpenSettings={handleSettingsMode} />
+      <Navbar 
+        activePage={activePage} 
+        setActivePage={setActivePage} 
+        onOpenSettings={handleSettingsMode} 
+        userStatus={userStatus}
+        onUpgrade={() => setShowUpgradeModal(true)}
+      />
       
       {profileLoading ? (
         <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -289,6 +259,7 @@ export default function AppIndex() {
       ) : activePage === 'dashboard' && (
         <div className="dashboard-container">
           <Sidebar 
+            userId={user?.id}
             githubSyncData={githubSyncData} 
             setGithubSyncData={setGithubSyncData}
             profiles={profiles}
@@ -296,6 +267,10 @@ export default function AppIndex() {
             onSwitchProfile={handleSwitchProfile}
             onNewProfile={handleNewProfile}
             onDeleteProfile={handleDeleteProfile}
+            setActivePage={setActivePage}
+            profile={profile}
+            setProfile={setProfile}
+            onOpenInterview={() => setShowInterview(true)}
           />
           <MasterProfile 
              profile={profile} 
@@ -314,6 +289,27 @@ export default function AppIndex() {
         </div>
       )}
 
+      {activePage === 'github' && (
+        <div style={{ padding: '40px', minHeight: '80vh' }}>
+          <GithubFlow 
+            userId={user?.id} 
+            contextId={activeContextId} 
+            onComplete={(newProfile) => {
+              setProfile(newProfile);
+              setActivePage('dashboard');
+              // Trigger diagnostic refresh since data changed
+              api.runGlobalDiagnostic({ userId: user.id, contextId: activeContextId });
+            }} 
+          />
+        </div>
+      )}
+
+      {activePage === 'jd' && (
+        <div style={{ padding: '32px 40px', minHeight: '80vh' }}>
+          <JDPipeline userId={user?.id} contextId={activeContextId} profile={profile} />
+        </div>
+      )}
+
       {activePage === 'preview' && (
         <ResumePreview 
           profile={profile} 
@@ -323,69 +319,7 @@ export default function AppIndex() {
         />
       )}
 
-      {activePage === 'ai' && (
-        <div className="dashboard-container">
-          <div className="sidebar">
-             <div className="section-card">
-               <div className="card-title"><span className="mat-icon">work</span> 1. Job Description</div>
-               <textarea rows="8" placeholder="Paste JD here..." value={jdText} onChange={e => setJdText(e.target.value)} style={{marginTop: '12px'}} />
-             </div>
-             
-             <button className="btn btn-primary" style={{width: '100%', padding: '16px'}} onClick={handleRunAI} disabled={loading}>
-                {loading ? "Generating Output..." : "⚡ Run AI Optimization"}
-             </button>
-          </div>
-          
-          <div className="main-column">
-             {suggestions.length === 0 ? (
-               <div className="section-card" style={{minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)'}}>
-                 <span className="mat-icon" style={{fontSize: '64px', marginBottom: '16px'}}>auto_awesome</span>
-                 <h3>AI Optimizer</h3>
-                 <p style={{fontSize: '14px'}}>Paste a Job Description and click Run to see AI-tailored tweaks to your Master Profile.</p>
-               </div>
-             ) : (
-               <div className="animate-in">
-                 <div className="flex-between" style={{marginBottom: '20px'}}>
-                   <h2 style={{margin: 0}}>Optimization Suggestions</h2>
-                   <div className="flex-row gap-2">
-                     <button className="btn" onClick={() => setSuggestions(suggestions.map(s => ({...s, status: 'accepted'})))}>
-                       <span className="mat-icon" style={{color: '#22c55e'}}>check_circle</span> Accept All
-                     </button>
-                     <button className="btn" onClick={() => setSuggestions(suggestions.map(s => ({...s, status: 'rejected'})))}>
-                       <span className="mat-icon" style={{color: '#ef4444'}}>cancel</span> Reject All
-                     </button>
-                     <button className="btn btn-primary" onClick={handleApplyAIOptimizations}>
-                       Apply to Profile
-                     </button>
-                   </div>
-                 </div>
 
-                 {suggestions.map((s, i) => (
-                   <div key={i} className="section-card" style={{
-                     borderColor: s.status === 'accepted' ? '#22c55e' : s.status === 'rejected' ? '#ef4444' : 'var(--border)'
-                   }}>
-                     <div style={{fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '8px', fontWeight: 600}}>Original:</div>
-                     <div style={{fontSize: '13px', marginBottom: '16px'}}>{s.original}</div>
-                     
-                     <div style={{fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '8px', fontWeight: 600}}>AI Suggestion:</div>
-                     <DiffText original={s.original} suggested={s.modified} />
-
-                     <div className="flex-row gap-2" style={{marginTop: '16px'}}>
-                        <button className="btn btn-icon-only" style={{background: 'rgba(34,197,94,0.1)', color: '#16a34a', borderColor: 'transparent'}} onClick={() => {let arr=[...suggestions]; arr[i].status='accepted'; setSuggestions(arr)}}>
-                          <span className="mat-icon">check</span>
-                        </button>
-                        <button className="btn btn-icon-only" style={{background: 'rgba(239,68,68,0.1)', color: '#dc2626', borderColor: 'transparent'}} onClick={() => {let arr=[...suggestions]; arr[i].status='rejected'; setSuggestions(arr)}}>
-                          <span className="mat-icon">close</span>
-                        </button>
-                        {s.status !== 'pending' && <span style={{marginLeft: '12px', fontSize: '12px', fontWeight: 600, color: 'var(--muted-foreground)'}}>{s.status.toUpperCase()}</span>}
-                     </div>
-                   </div>
-                 ))}
-               </div>
-             )}
-          </div>
-        </div>
-      )}
 
       {/* MODALS */}
       {showUpload && (
@@ -458,17 +392,10 @@ export default function AppIndex() {
               <div className="flex-column gap-2">
                 <button 
                   className="btn" 
-                  style={{borderColor: '#ef4444', color: '#ef4444', fontWeight: 600, width: '100%', marginBottom: '8px', background: 'transparent'}}
+                  style={{borderColor: '#ef4444', color: '#ef4444', fontWeight: 600, width: '100%', background: 'transparent'}}
                   onClick={handleClearData}
                 >
                   Clear All Data
-                </button>
-                <button 
-                  className="btn" 
-                  style={{background: '#ef4444', color: 'white', border: 'none', fontWeight: 600, width: '100%'}}
-                  onClick={handleDeleteAccount}
-                >
-                  Delete Account
                 </button>
               </div>
             </div>
@@ -478,6 +405,30 @@ export default function AppIndex() {
             </div>
           </div>
         </div>
+      )}
+
+      {showUpgradeModal && (
+        <UpgradeModal 
+          user={user} 
+          onClose={() => setShowUpgradeModal(false)}
+          onSuccess={async () => {
+             setShowUpgradeModal(false);
+             const status = await api.getUserStatus(user.id);
+             setUserStatus(status);
+          }}
+        />
+      )}
+
+      {showInterview && (
+        <InterviewPanel 
+          userId={user?.id}
+          contextId={activeContextId}
+          profile={profile}
+          onClose={() => setShowInterview(false)}
+          onMergeSuccess={(newProf) => {
+            setProfile(newProf);
+          }}
+        />
       )}
 
     </>

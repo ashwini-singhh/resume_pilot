@@ -14,6 +14,8 @@ import re
 import uuid
 from typing import List, Dict, Optional, Tuple
 
+from prompts.improvement import QUESTION_GEN_PROMPT, IMPROVE_BULLET_PROMPT
+
 from sqlmodel import SQLModel, Field, Session, Column, JSON, create_engine, select
 
 logger = logging.getLogger(__name__)
@@ -35,48 +37,6 @@ class ContextMessage(SQLModel, table=True):
     )
 
 
-# ── Prompts ──────────────────────────────────────────────────────────────────
-
-_QUESTION_GEN_PROMPT = """\
-You are an expert resume coach reviewing a candidate's resume bullet.
-
-Your task: generate 2–3 HIGH-VALUE questions to gather missing context that would let you write a much stronger, more specific version of this bullet.
-
-Rules:
-- Questions must focus on: quantified impact, scale, tools/tech used, team size, or measurable outcomes
-- DO NOT ask generic questions like "What did you do?" or "How did it go?"
-- DO NOT hallucinate fields. Only ask about what seems genuinely missing.
-- Return ONLY a JSON array of question strings. No extra text.
-
-Section: {section}
-Bullet: "{bullet}"
-
-Example output:
-["How many users or requests did this system handle?", "Which specific technologies or frameworks did you use?", "What was the measured impact (latency reduction, cost savings, etc.)?"]
-
-Output (JSON array only):
-"""
-
-_IMPROVE_PROMPT = """\
-You are an expert ATS-optimized resume writer.
-
-Your task: rewrite the resume bullet below using the additional context provided.
-
-STRICT RULES:
-1. Start with a strong action verb (Led, Designed, Engineered, Reduced, etc.)
-2. Keep the SAME factual meaning — do NOT invent claims
-3. Add specificity from the context answers
-4. Keep it to 1 sentence, under 25 words
-5. Do NOT use first person (I, We)
-6. Return ONLY a JSON object: {{"improved_bullet": "..."}}
-
-Original Bullet: "{bullet}"
-
-Context provided by candidate:
-{context}
-
-Output (JSON only):
-"""
 
 
 # ── Word-level Diff (no LLM) ─────────────────────────────────────────────────
@@ -130,7 +90,7 @@ async def generate_questions(
     """
     Step 1: Generate 2–3 intelligent context questions, store as assistant messages.
     """
-    prompt = _QUESTION_GEN_PROMPT.format(section=section, bullet=bullet_text)
+    prompt = QUESTION_GEN_PROMPT.format(section=section, bullet=bullet_text)
 
     result = await llm_client.generate_json(
         prompt=prompt,
@@ -202,7 +162,7 @@ async def generate_improvement(
         context_pairs.append(f"Q{i+1}: {q}\nA{i+1}: {a}")
     context_block = "\n\n".join(context_pairs)
 
-    prompt = _IMPROVE_PROMPT.format(bullet=original_bullet, context=context_block)
+    prompt = IMPROVE_BULLET_PROMPT.format(bullet=original_bullet, context=context_block)
 
     result = await llm_client.generate_json(
         prompt=prompt,

@@ -127,19 +127,77 @@ def fetch_github_profile(
     }
 
 
-def extract_github_keywords(profile_data: Optional[Dict]) -> List[str]:
-    """
-    Return a flat list of technical keywords: languages + topics.
-    Usable as a quick skill gap input.
-    """
-    if not profile_data:
-        return []
-
-    kws = list(profile_data.get("languages", []))
-    kws += profile_data.get("topics", [])
-
     seen: set = set()
     return [k for k in kws if k.lower() not in seen and not seen.add(k.lower())]  # type: ignore[func-returns-value]
+
+
+def fetch_github_repos_list(
+    github_url: str,
+    token: Optional[str] = None,
+    max_repos: int = 50,
+) -> List[Dict]:
+    """
+    Lightweight fetch of repository metadata (name, description, stars, etc.)
+    Used for user selection before expensive README fetching/summarization.
+    """
+    if not github_url or not github_url.strip():
+        return []
+
+    username = _extract_username(github_url)
+    if not username:
+        return []
+
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    repos_raw = _get(
+        f"{GITHUB_API}/users/{username}/repos",
+        headers,
+        params={"per_page": max_repos, "sort": "updated", "type": "owner"},
+    ) or []
+
+    # Map to selection-friendly format
+    return [{
+        "name": r["name"],
+        "description": r.get("description") or "",
+        "stars": r.get("stargazers_count", 0),
+        "language": r.get("language") or "Mixed",
+        "url": r.get("html_url", ""),
+        "id": r.get("id")
+    } for r in repos_raw if not r.get("fork", False)]
+
+
+def fetch_single_repo_details(
+    username: str,
+    repo_name: str,
+    token: Optional[str] = None
+) -> Optional[Dict]:
+    """Fetch README and language data for a specific repo."""
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    repo_info = _get(f"{GITHUB_API}/repos/{username}/{repo_name}", headers)
+    if not repo_info:
+        return None
+
+    # README
+    readme_text = _fetch_readme(username, repo_name, headers)
+
+    # Language bytes
+    lang_data = _get(f"{GITHUB_API}/repos/{username}/{repo_name}/languages", headers) or {}
+
+    return {
+        "name": repo_name,
+        "description": repo_info.get("description") or "",
+        "url": repo_info.get("html_url", ""),
+        "stars": repo_info.get("stargazers_count", 0),
+        "language": repo_info.get("language") or "",
+        "languages": list(lang_data.keys()),
+        "topics": repo_info.get("topics", []),
+        "readme_text": readme_text,
+    }
 
 
 async def summarise_repo_for_resume(

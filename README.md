@@ -1,4 +1,4 @@
-# ResumePilot (ResumeDad) SaaS Platform 🚀
+# ResumeSailor SaaS Platform 🚀
 
 A production-grade, full-stack AI SaaS platform for resume optimization, grading, and career persona management. This application is architected for scale, high-performance AI inference, and automated CI/CD.
 
@@ -89,7 +89,3 @@ cd frontend
 npm install
 npm run dev
 ```
-
----
-
-Developed as a senior-architected SaaS platform. **Launch ready.** 🏁✨

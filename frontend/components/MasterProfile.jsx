@@ -5,12 +5,19 @@ import {
   ProjectsCard, 
   EducationCard, 
   SkillsCard, 
-  CertificationsCard,
+  AchievementsCard,
   SummaryCard
 } from './SectionCards';
-import { getProfile, saveProfile } from '../lib/api';
+import { getProfile, saveProfile, generateSectionContent, runGlobalDiagnostic } from '../lib/api';
 
 export default function MasterProfile({ profile, userId, contextId, editingSection, setEditingSection, setProfile, onOpenUpload }) {
+  const globalContext = {
+    target_role: profile.target_role || profile.role,
+    target_companies: profile.target_companies,
+    summary: profile.summary,
+    skills: profile.skills
+  };
+
   // Use a ref to prevent the effect from re-running constantly when profile changes
   const profileRef = useRef(profile);
   useEffect(() => {
@@ -39,6 +46,49 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
     }
   }, [userId, contextId]); // Run when userId or contextId is available
 
+  const [diagnosticScore, setDiagnosticScore] = useState(profile.global_diagnostic?.competitiveness_score || null);
+  const [refreshingDiagnostic, setRefreshingDiagnostic] = useState(false);
+
+  const handleRefreshDiagnostic = async () => {
+    if (!userId || !contextId) return alert("Context required to run diagnostic");
+    setRefreshingDiagnostic(true);
+    try {
+      const res = await runGlobalDiagnostic({ userId, contextId });
+      setDiagnosticScore(res.competitiveness_score);
+      // Update profile locally so it persists on next save, OR trigger an immediate save
+      const p = JSON.parse(JSON.stringify(profile));
+      p.global_diagnostic = res;
+      setProfile(p);
+      // We don't necessarily need to call saveProfile here because the backend /diagnostic endpoint 
+      // now handles persistence, but updating local state ensures UI consistency.
+    } catch (e) {
+      console.error("Diagnostic refresh failed:", e);
+      alert("Failed to refresh score. Please try again later.");
+    } finally {
+      setRefreshingDiagnostic(false);
+    }
+  };
+
+
+  const [generatingSection, setGeneratingSection] = useState(null);
+
+  const handleGenerateSection = async (sectionKey) => {
+    if (!userId || !contextId) return alert("Context required to generate");
+    setGeneratingSection(sectionKey);
+    try {
+      const res = await generateSectionContent({ userId, contextId, section: sectionKey });
+      if (res.content) {
+         const p = JSON.parse(JSON.stringify(profile));
+         p[sectionKey] = res.content;
+         setProfile(p);
+         if (userId && contextId) saveProfile(p, userId, contextId);
+      }
+    } catch (e) {
+      alert("Generation failed: " + e.message);
+    }
+    setGeneratingSection(null);
+  };
+
   // ── Profile completion ──────────────────────────────────────────────────────
   const calcCompletion = (p) => {
     let filled = 0;
@@ -54,6 +104,8 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
   };
 
   const pct = calcCompletion(profile);
+
+
 
   // Split into 2 columns for masonry-like view
   const leftSections = [];
@@ -100,8 +152,12 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
         <WorkExperienceCard
           key={name}
           experience={profile.experience}
+          userContext={globalContext}
+          userId={userId}
+          contextId={contextId}
           isEditing={editingSection === name}
           onEditToggle={setEditingSection}
+          onChange={(s) => setProfile({...profile, ...s})}
           onBulletImproved={handleBulletImproved}
           onEntryImproved={handleEntryImproved}
         />
@@ -110,15 +166,50 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
         <ProjectsCard
           key={name}
           projects={profile.projects}
+          userContext={globalContext}
+          userId={userId}
+          contextId={contextId}
           isEditing={editingSection === name}
           onEditToggle={setEditingSection}
+          onChange={(s) => setProfile({...profile, ...s})}
           onBulletImproved={handleBulletImproved}
           onEntryImproved={handleEntryImproved}
         />
       );
-      case 'Education': return <EducationCard key={name} education={profile.education} isEditing={editingSection === name} onEditToggle={setEditingSection} />;
-      case 'Skills': return <SkillsCard key={name} skills={profile.skills} isEditing={editingSection === name} onEditToggle={setEditingSection} />;
-      case 'Certifications': return <CertificationsCard key={name} certifications={profile.certifications} isEditing={editingSection === name} onEditToggle={setEditingSection} />;
+      case 'Education': return (
+        <EducationCard 
+          key={name} 
+          education={profile.education} 
+          isEditing={editingSection === name} 
+          onEditToggle={setEditingSection} 
+          onChange={(s) => setProfile({...profile, ...s})}
+        />
+      );
+      case 'Skills': return (
+        <SkillsCard 
+          key={name} 
+          skills={profile.skills} 
+          isEditing={editingSection === name} 
+          onEditToggle={setEditingSection} 
+          onChange={(s) => setProfile({...profile, ...s})}
+          onGenerate={() => handleGenerateSection("skills")} 
+          isGenerating={generatingSection === "skills"} 
+        />
+      );
+      case 'Achievements': return (
+        <AchievementsCard 
+          key={name} 
+          achievements={profile.achievements} 
+          isEditing={editingSection === name} 
+          onEditToggle={setEditingSection} 
+          onChange={(s) => setProfile({...profile, ...s})}
+          score={profile.achievements_score}
+          reasons={profile.achievements_reasons}
+          userId={userId}
+          contextId={contextId}
+          userContext={globalContext}
+        />
+      );
       default: return null;
     }
   };
@@ -127,10 +218,32 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
     <div className="main-column animate-in">
       <div className="flex-between" style={{marginBottom: '20px'}}>
         <div>
-          <div className="profile-title">{profile.name || "Master Profile"}</div>
-          <div className="profile-sub">Manage your resume and context.</div>
+           <div className="profile-title">{profile.name || "Master Profile"}</div>
+           <div className="profile-sub">Manage your resume and context.</div>
         </div>
-        <div className="gap-2 flex-row">
+        <div className="gap-3 flex-row" style={{ alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--muted)', padding: '6px 16px', borderRadius: '24px', border: '1px solid var(--border)' }}>
+            <span className="mat-icon" style={{ color: '#ef4444', fontSize: '18px' }}>troubleshoot</span>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--muted-foreground)' }}>Overall Score:</span>
+            <span style={{ fontSize: '14px', fontWeight: 800, color: '#ef4444' }}>{diagnosticScore ?? '? '}/10</span>
+            <button 
+              onClick={handleRefreshDiagnostic} 
+              disabled={refreshingDiagnostic}
+              style={{ 
+                background: 'none', border: 'none', padding: 0, marginLeft: '4px',
+                display: 'flex', alignItems: 'center', cursor: 'pointer',
+                color: refreshingDiagnostic ? 'var(--muted-foreground)' : 'var(--accent)',
+                opacity: refreshingDiagnostic ? 0.5 : 1
+              }}
+              title="Recalculate Score"
+            >
+              <span className={`mat-icon ${refreshingDiagnostic ? 'spin' : ''}`} style={{ fontSize: '18px' }}>
+                refresh
+              </span>
+            </button>
+          </div>
+
+
           <button className="btn" onClick={() => {
             const count = Number(localStorage.getItem('usage_count') || 0);
             if (count >= 5) return alert("Monthly import limit reached! Take Premium to work on more resumes.");
@@ -156,9 +269,15 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
         summary={profile.summary} 
         isEditing={editingSection === 'Summary'} 
         onEditToggle={setEditingSection} 
-        onChange={(s) => setProfile({...profile, ...s})} 
+        onChange={(s) => setProfile({...profile, ...s})}
+        onGenerate={() => handleGenerateSection("summary")}
+        isGenerating={generatingSection === "summary"}
+        score={profile.summary_score}
+        reasons={profile.summary_reasons}
+        userId={userId}
+        contextId={contextId}
+        userContext={globalContext}
       />
-
       <div className="flex-between" style={{marginBottom: '16px'}}>
         <div />
       </div>

@@ -84,18 +84,18 @@ export default function MatchScore() {
               fontSize: 'clamp(2rem, 3vw, 3rem)',
               color: '#fff', margin: '0 0 16px', lineHeight: 1.1,
             }}>
-              Know Your Chances{' '}
+              See Exactly How It{' '}
               <span style={{
                 background: 'linear-gradient(135deg, #60a5fa, #a78bfa)',
                 WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-              }}>Before You Apply.</span>
+              }}>Works.</span>
             </h2>
 
             <p style={{
               fontSize: 16, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7,
               fontFamily: 'Inter, sans-serif', margin: '0 0 32px',
             }}>
-              Applying without knowing your match score is flying blind. ResumePilot scores your resume against the specific job description, surfaces every gap, and shows you exactly what to fix — before a recruiter ever sees it.
+              Applying without knowing your match score is flying blind. ResumeSailor scores your resume against the specific job description, surfaces every gap, and shows you exactly what to fix — before a recruiter ever sees it.
             </p>
 
             {[

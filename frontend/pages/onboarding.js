@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { supabase } from '../lib/supabaseClient';
 import * as api from '../lib/api';
+import Navbar from '../components/Navbar';
 
 const ROLE_MAP = {
   'Software Engineering': ['Backend Engineer', 'Frontend Engineer', 'Fullstack Engineer', 'DevOps Engineer', 'Mobile Engineer'],
@@ -207,18 +208,7 @@ export default function Onboarding() {
         goals: formData.goals,
       };
 
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-      const contextRes = await fetch(`${apiBase}/api/user/onboarding`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(contextPayload),
-      });
-      if (!contextRes.ok) {
-        const errText = await contextRes.text();
-        console.error('Onboarding Context Error Response:', errText);
-        throw new Error(`Profile initialization failed (${contextRes.status}): ${errText || 'Server Error'}`);
-      }
-      const contextData = await contextRes.json();
+      const contextData = await api.submitOnboarding(contextPayload);
       const newContextId = contextData.context_id;
 
       // 2. Process Resume (Using unified pipeline function)
@@ -385,33 +375,37 @@ export default function Onboarding() {
   return (
     <div className="onboarding-page">
       <Head>
-        <title>Setup | ResumePilot</title>
+        <title>Setup | ResumeSailor</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <div className="onboarding-container">
-        {!loading && !setupComplete && (
-          <div className="onboarding-progress-wrapper">
-            <div className="onboarding-progress-track">
-              <div className="onboarding-progress-fill" style={{ width: `${((currentStep + 1) / STEPS.length) * 100}%` }} />
-            </div>
-          </div>
-        )}
-        <div className={`onboarding-card ${loading ? 'onboarding-loading' : ''}`} style={{ position: 'relative' }}>
-          {router.query.new === 'true' && !loading && !setupComplete && (
-            <button 
-              onClick={() => router.replace('/dashboard')}
-              style={{
-                position: 'absolute', top: '16px', right: '16px',
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center'
-              }}
-            >
-              <span className="mat-icon">close</span>
-            </button>
-          )}
-          {renderCardContent()}
-        </div>
+      
+      <Navbar activePage="onboarding" setActivePage={() => {}} onOpenSettings={() => {}} />
 
+      <div className="onboarding-scroll-area">
+        <div className="onboarding-container">
+          {!loading && !setupComplete && (
+            <div className="onboarding-progress-wrapper">
+              <div className="onboarding-progress-track">
+                <div className="onboarding-progress-fill" style={{ width: `${((currentStep + 1) / STEPS.length) * 100}%` }} />
+              </div>
+            </div>
+          )}
+          <div className={`onboarding-card ${loading ? 'onboarding-loading' : ''}`} style={{ position: 'relative' }}>
+            {router.query.new === 'true' && !loading && !setupComplete && (
+              <button 
+                onClick={() => router.replace('/dashboard')}
+                style={{
+                  position: 'absolute', top: '16px', right: '16px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center'
+                }}
+              >
+                <span className="mat-icon">close</span>
+              </button>
+            )}
+            {renderCardContent()}
+          </div>
+        </div>
       </div>
     </div>
   );
