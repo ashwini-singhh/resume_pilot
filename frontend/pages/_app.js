@@ -1,5 +1,6 @@
 // [RESUME_SAILOR_SYNC] 2026-04-26 11:32
 import '../styles/globals.css';
+import Head from 'next/head';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
@@ -85,6 +86,11 @@ function MyApp({ Component, pageProps }) {
 
   return (
     <>
+      <Head>
+        <title>ResumeSailor | Professional AI Resume Builder</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" type="image/png" href="/favicon.png" />
+      </Head>
       <Component {...pageProps} />
     </>
   );
