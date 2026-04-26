@@ -157,6 +157,7 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
           contextId={contextId}
           isEditing={editingSection === name}
           onEditToggle={setEditingSection}
+          onChange={(s) => setProfile({...profile, ...s})}
           onBulletImproved={handleBulletImproved}
           onEntryImproved={handleEntryImproved}
         />
@@ -170,12 +171,31 @@ export default function MasterProfile({ profile, userId, contextId, editingSecti
           contextId={contextId}
           isEditing={editingSection === name}
           onEditToggle={setEditingSection}
+          onChange={(s) => setProfile({...profile, ...s})}
           onBulletImproved={handleBulletImproved}
           onEntryImproved={handleEntryImproved}
         />
       );
-      case 'Education': return <EducationCard key={name} education={profile.education} isEditing={editingSection === name} onEditToggle={setEditingSection} />;
-      case 'Skills': return <SkillsCard key={name} skills={profile.skills} isEditing={editingSection === name} onEditToggle={setEditingSection} onGenerate={() => handleGenerateSection("skills")} isGenerating={generatingSection === "skills"} />;
+      case 'Education': return (
+        <EducationCard 
+          key={name} 
+          education={profile.education} 
+          isEditing={editingSection === name} 
+          onEditToggle={setEditingSection} 
+          onChange={(s) => setProfile({...profile, ...s})}
+        />
+      );
+      case 'Skills': return (
+        <SkillsCard 
+          key={name} 
+          skills={profile.skills} 
+          isEditing={editingSection === name} 
+          onEditToggle={setEditingSection} 
+          onChange={(s) => setProfile({...profile, ...s})}
+          onGenerate={() => handleGenerateSection("skills")} 
+          isGenerating={generatingSection === "skills"} 
+        />
+      );
       case 'Achievements': return (
         <AchievementsCard 
           key={name} 

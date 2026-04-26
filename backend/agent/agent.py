@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 class Agent:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, llm_client: Optional[LLMClient] = None):
         self.config = config
-        self.llm_client = LLMClient(config)
+        self.llm_client = llm_client or LLMClient(config)
 
     # ── JSON Parsing ──────────────────────────────────────
 
@@ -58,11 +58,21 @@ class Agent:
                             return None
         return None
 
-    async def _get_full_response(self, prompt: str) -> str:
+    async def _get_full_response(self, 
+        prompt: str,
+        user_id: str = "guest",
+        feature: str = "unknown",
+        run_id: Optional[str] = None
+    ) -> str:
         """Collect the complete LLM response text from the async stream."""
         messages = [{"role": "user", "content": prompt}]
         full_text = ""
-        async for event in self.llm_client.chat_completion(messages):
+        async for event in self.llm_client.chat_completion(
+            messages, 
+            user_id=user_id, 
+            feature=feature, 
+            run_id=run_id
+        ):
             if event.type == StreamEventType.TEXT_DELTA and event.text_delta:
                 full_text += event.text_delta.content
             elif event.type == StreamEventType.MESSAGE_COMPLETE:
@@ -77,7 +87,13 @@ class Agent:
             
         return full_text
 
-    async def parse_content(self, content: str, user_context: dict = None) -> Dict | None:
+    async def parse_content(self, 
+        content: str, 
+        user_context: dict = None,
+        user_id: str = "guest",
+        feature: str = "agent_parse",
+        run_id: Optional[str] = None
+    ) -> Dict | None:
         """
         Main entry point to parse content into JSON.
         
@@ -91,7 +107,12 @@ class Agent:
 
         logger.info(f"--- Sending parsing request to LLM ({self.config.model_name}) ---")
         try:
-            res_text = await self._get_full_response(prompt)
+            res_text = await self._get_full_response(
+                prompt,
+                user_id=user_id,
+                feature=feature,
+                run_id=run_id
+            )
             logger.info(f"--- LLM Response Received ({len(res_text)} chars) ---")
             parsed = self._parse_json(res_text)
             if parsed is None:

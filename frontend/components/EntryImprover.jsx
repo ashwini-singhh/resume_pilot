@@ -147,9 +147,10 @@ function QuestionCard({ question, index }) {
 }
 
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ══════════════════════════════════════════════════════════════════════════════
+// ── Global Cache (Client-side persistence for the session) ─────
+const evaluationCache = {};
+const interviewCache = {};
+const proposalCache = {};
 
 export default function EntryImprover({ entry, entryId, section, userContext, userId, contextId, onAccept, onClose }) {
   const [step, setStep] = useState(0);     // 0=evaluation, 1=interview, 2=proposal
@@ -168,6 +169,9 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
   const entryLabel = entry?.company || entry?.name || 'Entry';
   const preQuestions = evaluation?.follow_up_questions || [];
 
+  // Generate a unique key for this entry
+  const cacheKey = `${userId || 'anon'}_${contextId || 'none'}_${section}_${entryId}`;
+
   // ── Auto-scroll chat ─────
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -182,6 +186,13 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
     if (!entry) return;
     abortRef.current = false;
 
+    // Check Cache first
+    if (evaluationCache[cacheKey]) {
+      setEvaluation(evaluationCache[cacheKey]);
+      setStatus('idle');
+      return;
+    }
+
     const runEvaluation = async () => {
       setStatus('loading');
       try {
@@ -190,8 +201,7 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
         if (userId && contextId && entryId) {
           evalResult = await evaluateEntry({ user_id: userId, context_id: contextId, entry_id: entryId, section });
         } else {
-          // Fallback: call with entry embedded in the entry_id approach won't work well
-          // so just show a placeholder and let the user skip to interview
+          // Fallback
           evalResult = {
             entry_id: entryId,
             score: null,
@@ -203,6 +213,10 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
           };
         }
         if (abortRef.current) return;
+        
+        // Save to cache
+        evaluationCache[cacheKey] = evalResult;
+        
         setEvaluation(evalResult);
         setStatus('idle');
       } catch (err) {
@@ -223,11 +237,28 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
 
     runEvaluation();
     return () => { abortRef.current = true; };
-  }, [entry, entryId, section]);
+  }, [entry, entryId, section, cacheKey]);
 
   // ── Step 1: Start interview (pre-seeded with questions from evaluation) ─────
   const startInterview = async () => {
     setStep(1);
+    
+    // Check Cache for initial turn
+    const initialTurnKey = `${cacheKey}_initial`;
+    if (interviewCache[initialTurnKey]) {
+      const resp = interviewCache[initialTurnKey];
+      const newHistory = [{ role: 'assistant', content: resp.reply_text }];
+      setMessages(newHistory);
+      setConfidence(resp.confidence_score || 0);
+      if (resp.ready_to_propose) {
+        setStatus('generating_proposal');
+        triggerProposal(newHistory);
+      } else {
+        setStatus('idle');
+      }
+      return;
+    }
+
     setStatus('loading');
     try {
       const resp = await entryInterviewTurn({
@@ -237,6 +268,10 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
         pre_identified_questions: preQuestions,
       });
       if (abortRef.current) return;
+
+      // Save to cache
+      interviewCache[initialTurnKey] = resp;
+
       const newHistory = [{ role: 'assistant', content: resp.reply_text }];
       setMessages(newHistory);
       setConfidence(resp.confidence_score || 0);
@@ -262,6 +297,24 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
   };
 
   const performTurn = async (currentHistory) => {
+    // Check Cache for this specific turn
+    const turnKey = `${cacheKey}_${JSON.stringify(currentHistory)}`;
+    if (interviewCache[turnKey]) {
+      const resp = interviewCache[turnKey];
+      const newHistory = [...currentHistory, { role: 'assistant', content: resp.reply_text }];
+      setMessages(newHistory);
+      setConfidence(resp.confidence_score || 0);
+
+      const userTurnCount = newHistory.filter(m => m.role === 'user').length;
+      if (resp.ready_to_propose || userTurnCount >= MAX_TURNS) {
+        setStatus('generating_proposal');
+        triggerProposal(newHistory);
+      } else {
+        setStatus('idle');
+      }
+      return;
+    }
+
     setStatus('loading');
     try {
       const resp = await entryInterviewTurn({
@@ -271,6 +324,9 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
         pre_identified_questions: preQuestions,
       });
       if (abortRef.current) return;
+
+      // Save to cache
+      interviewCache[turnKey] = resp;
 
       const newHistory = [...currentHistory, { role: 'assistant', content: resp.reply_text }];
       setMessages(newHistory);
@@ -291,11 +347,26 @@ export default function EntryImprover({ entry, entryId, section, userContext, us
   };
 
   const triggerProposal = async (history) => {
+    // Check Cache first - use a key that includes history to ensure context
+    const historyKey = JSON.stringify(history);
+    const fullPropKey = `${cacheKey}_${historyKey}`;
+
+    if (proposalCache[fullPropKey]) {
+      setResult(proposalCache[fullPropKey]);
+      setStep(2);
+      setStatus('idle');
+      return;
+    }
+
     try {
       const res = await improveEntry({
         section, entry, entry_id: entryId, chat_history: history, user_context: userContext
       });
       if (abortRef.current) return;
+
+      // Save to cache
+      proposalCache[fullPropKey] = res;
+
       setResult(res);
       setStep(2);
       setStatus('idle');

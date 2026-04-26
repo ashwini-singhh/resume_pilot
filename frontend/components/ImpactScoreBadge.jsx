@@ -30,7 +30,7 @@ function ScoreFill({ score }) {
   );
 }
 
-export default function ImpactScoreBadge({ score, loading, reasons, onImprove, compact }) {
+export default function ImpactScoreBadge({ score, loading, reasons, onImprove, compact, className = "" }) {
   const showImproveBtn = !loading && score !== null && onImprove;
 
   const emoji = score === null ? '' : score >= 8 ? '🟢' : score >= 5.5 ? '🟡' : '🔴';
@@ -94,7 +94,7 @@ export default function ImpactScoreBadge({ score, loading, reasons, onImprove, c
 
   if (compact) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', width: '100%' }}>
+      <div className={`${className} no-print`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', width: '100%' }}>
         {animations}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {loading ? (
@@ -118,7 +118,7 @@ export default function ImpactScoreBadge({ score, loading, reasons, onImprove, c
   }
 
   return (
-    <div style={{
+    <div className={`${className} no-print`} style={{
       background: bgColor,
       border: `1px solid ${borderColor}`,
       borderRadius: '10px',

@@ -77,11 +77,11 @@ export default function FinalCTA() {
             margin: '0 0 20px',
           }}
         >
-          Your Resume Deserves Better{' '}
+          Stop Guessing.{' '}
           <span style={{
             background: 'linear-gradient(135deg, #60a5fa, #a78bfa)',
             WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-          }}>Than Guesswork.</span>
+          }}>Start Matching.</span>
         </motion.h2>
 
         <motion.p
@@ -95,7 +95,7 @@ export default function FinalCTA() {
             fontFamily: 'Inter, sans-serif',
           }}
         >
-          Join thousands of job seekers who stopped guessing and started landing interviews.
+          Your dream job shouldn't slip away because of a bad resume format.
         </motion.p>
 
         <motion.div
@@ -124,7 +124,7 @@ export default function FinalCTA() {
               e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,82,255,0.4)';
             }}
           >
-            Optimize My Resume Now
+            Try ResumeSailor Free
             <span style={{
               fontFamily: 'Material Symbols Rounded',
               fontVariationSettings: "'wght' 300",
@@ -162,10 +162,10 @@ export default function FinalCTA() {
           <span style={{
             fontFamily: 'Calistoga, serif', fontSize: 18,
             color: 'rgba(255,255,255,0.7)', letterSpacing: '-0.02em',
-          }}>ResumePilot</span>
+          }}>ResumeSailor</span>
         </div>
         <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', fontFamily: 'Inter, sans-serif', margin: 0 }}>
-          © {new Date().getFullYear()} ResumePilot. Built to get you hired.
+          © {new Date().getFullYear()} ResumeSailor. Built to get you hired.
         </p>
       </div>
     </section>

@@ -28,6 +28,11 @@ class Config(BaseModel):
     def model_name(self) -> str: 
         return os.environ.get("MODEL_NAME") or os.environ.get("BASE_MODEL") or self.model.name
 
+    @property
+    def cheap_model_name(self) -> str:
+        # Default to primary model if cheap one isn't specified
+        return os.environ.get("CHEAP_MODEL_NAME") or os.environ.get("LIGHT_MODEL_NAME") or self.model_name
+
     @model_name.setter
     def model_name(self, value: str) -> None: 
         self.model.name = value

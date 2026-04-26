@@ -30,25 +30,53 @@ export function PersonalInfoCard({ profile, isEditing, onEditToggle, onChange })
         <div className="card-title" style={{marginBottom: '12px'}}>
           <span className="mat-icon">person</span> Edit Personal Info
         </div>
-        <div className="flex-column gap-2">
-          <div>
-            <label className="form-label">Full Name</label>
-            <input type="text" placeholder="Name" value={tempData.name || ''} onChange={e => setTempData({...tempData, name: e.target.value})} />
+        <div className="flex-column gap-3">
+          <div className="flex-row gap-3">
+            <div style={{ flex: 1 }}>
+              <label className="form-label">Full Name</label>
+              <input type="text" placeholder="Name" value={tempData.name || ''} onChange={e => setTempData({...tempData, name: e.target.value})} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label className="form-label">Headline / Job Title</label>
+              <input type="text" placeholder="e.g. Senior Software Engineer" value={tempData.title || ''} onChange={e => setTempData({...tempData, title: e.target.value})} />
+            </div>
           </div>
-          <div>
-            <label className="form-label">Email</label>
-            <input type="text" placeholder="Email" value={tempData.email || ''} onChange={e => setTempData({...tempData, email: e.target.value})} />
-          </div>
-          <div>
-            <label className="form-label">Phone</label>
-            <input type="text" placeholder="Phone" value={tempData.phone || ''} onChange={e => setTempData({...tempData, phone: e.target.value})} />
+          <div className="flex-row gap-3">
+            <div style={{ flex: 1 }}>
+              <label className="form-label">Email</label>
+              <input type="text" placeholder="Email" value={tempData.email || ''} onChange={e => setTempData({...tempData, email: e.target.value})} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label className="form-label">Phone</label>
+              <input type="text" placeholder="Phone" value={tempData.phone || ''} onChange={e => setTempData({...tempData, phone: e.target.value})} />
+            </div>
           </div>
           <div>
             <label className="form-label">Location</label>
             <input type="text" placeholder="Location" value={tempData.location || ''} onChange={e => setTempData({...tempData, location: e.target.value})} />
           </div>
+          <div className="flex-row gap-3">
+            <div style={{ flex: 1 }}>
+              <label className="form-label">LinkedIn (Optional)</label>
+              <input type="text" placeholder="https://linkedin.com/in/username" value={tempData.linkedin || ''} onChange={e => setTempData({...tempData, linkedin: e.target.value})} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label className="form-label">GitHub (Optional)</label>
+              <input type="text" placeholder="https://github.com/username" value={tempData.github || ''} onChange={e => setTempData({...tempData, github: e.target.value})} />
+            </div>
+          </div>
+          <div className="flex-row gap-3">
+            <div style={{ flex: 1 }}>
+              <label className="form-label">Portfolio / Website (Optional)</label>
+              <input type="text" placeholder="https://portfolio.com" value={tempData.portfolio || ''} onChange={e => setTempData({...tempData, portfolio: e.target.value})} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label className="form-label">Profile Photo URL (Optional)</label>
+              <input type="text" placeholder="https://example.com/photo.jpg" value={tempData.profile_photo_url || ''} onChange={e => setTempData({...tempData, profile_photo_url: e.target.value})} />
+            </div>
+          </div>
         </div>
-        <div className="flex-between" style={{marginTop: '16px'}}>
+        <div className="flex-between" style={{marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '16px'}}>
           <button className="btn" onClick={() => { setTempData(profile); onEditToggle(null); }}>Cancel</button>
           <button className="btn btn-primary" onClick={() => { onChange(tempData); onEditToggle(null); }}>Save</button>
         </div>
@@ -66,9 +94,26 @@ export function PersonalInfoCard({ profile, isEditing, onEditToggle, onChange })
           <span className="mat-icon">edit</span>
         </button>
       </div>
-      <div style={{fontSize: '14px', fontWeight: 700, color: 'var(--foreground)'}}>{profile.name || 'Your Name'}</div>
-      <div style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>
-        📧 {profile.email || 'email@example.com'} · 📱 {profile.phone || 'Phone'} · 📍 {profile.location || 'Location'}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {profile.profile_photo_url && (
+          <img 
+            src={profile.profile_photo_url} 
+            alt="Profile" 
+            style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent)' }} 
+          />
+        )}
+        <div style={{ flex: 1 }}>
+          <div style={{fontSize: '14px', fontWeight: 700, color: 'var(--foreground)'}}>{profile.name || 'Your Name'}</div>
+          {profile.title && <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '4px' }}>{profile.title}</div>}
+          <div style={{fontSize: '11px', color: 'var(--muted-foreground)', display: 'flex', flexWrap: 'wrap', gap: '8px'}}>
+            <span>📧 {profile.email || 'email@example.com'}</span>
+            <span>📱 {profile.phone || 'Phone'}</span>
+            <span>📍 {profile.location || 'Location'}</span>
+            {profile.linkedin && <span>🔗 LinkedIn</span>}
+            {profile.github && <span>💻 GitHub</span>}
+            {profile.portfolio && <span>🌐 Portfolio</span>}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -447,6 +492,9 @@ export function ProjectsCard({ projects = [], userContext, userId, contextId, is
             <label className="form-label">Project Name</label>
             <input type="text" value={proj.name} onChange={e => handleEntryChange(idx, 'name', e.target.value)} style={{marginBottom: '12px'}} />
             
+            <label className="form-label">Live Project Link (Optional)</label>
+            <input type="text" placeholder="https://demo.com" value={proj.live_link || ''} onChange={e => handleEntryChange(idx, 'live_link', e.target.value)} style={{marginBottom: '12px'}} />
+
             <label className="form-label">Key Achievements (One per line)</label>
             <textarea 
               rows="4" 
@@ -494,7 +542,10 @@ export function ProjectsCard({ projects = [], userContext, userId, contextId, is
             paddingBottom: idx < projects.length - 1 ? '16px' : 0,
             borderBottom: idx < projects.length - 1 ? '1px solid var(--border)' : 'none',
           }}>
-            <div style={{fontWeight: 600, color: '#dc2626', fontSize: '13px', marginBottom: '4px'}}>{proj.name}</div>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px'}}>
+              <div style={{fontWeight: 600, color: '#dc2626', fontSize: '13px'}}>{proj.name}</div>
+              {proj.live_link && <div style={{fontSize: '10px', color: 'var(--accent)'}}>🔗 {proj.live_link}</div>}
+            </div>
 
             {/* Impact Score Badge */}
             <ImpactScoreBadge

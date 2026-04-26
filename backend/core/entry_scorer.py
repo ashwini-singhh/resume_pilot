@@ -18,6 +18,8 @@ from typing import List, Dict, Optional, Tuple, Any
 from sqlmodel import Session, select
 from core.models import MasterProfile
 from core.llm_client.llm_client import LLMClient
+from prompts.alignment import EVALUATE_ENTRY_PROMPT, BULK_SCORE_PROMPT
+from prompts.improvement import ENTRY_INTERVIEW_PROMPT, ELITE_IMPROVE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -26,276 +28,24 @@ logger = logging.getLogger(__name__)
 # PHASE 1 — RECRUITER EVALUATION PROMPT (READ-ONLY, NO MODIFICATION)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_EVALUATE_ENTRY_PROMPT = """\
-You are a senior recruiter, resume evaluator, and hiring decision analyst at a top-tier tech company.
-
-YOUR TASK IS NOT TO REWRITE THE RESUME.
-Your task is to EVALUATE the entry AS-IS and produce a structured analysis.
-
-DO NOT modify any bullet point.
-DO NOT suggest improved text.
-DO NOT rewrite anything.
-ONLY observe, score, and ask targeted questions.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-USER CONTEXT:
-{user_context}
-
-RESUME ENTRY TO EVALUATE:
-{entry_json}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-STEP 1 — SCORE THIS ENTRY (0–10 scale)
-
-Evaluate independently on these 5 dimensions:
-- Impact: Are there measurable results, metrics, business value?
-- Clarity: Is each bullet immediately understandable in 5 seconds?
-- Specificity: Are tools, frameworks, scale, numbers mentioned?
-- Ownership: Did the candidate lead this, or just assist?
-- Action Verbs: Are verbs strong (Architected, Drove, Reduced) or weak (Worked, Helped, Assisted)?
-
-SCORING SCALE:
-0–3  → Weak (low signal, vague, could apply to anyone)
-4–6  → Average (some substance, needs significant improvement)
-7–8  → Strong (clear impact, good specificity)
-9–10 → Exceptional (quantified, specific, differentiated, recruiter-ready)
-
-STEP 2 — DETECT ISSUES
-
-Look specifically for:
-- Vague wording ("worked on", "helped with", "involved in", "assisted")
-- Missing metrics (no %, no numbers, no scale, no duration)
-- No impact (describes tasks but not outcomes)
-- No tools or technologies mentioned
-- Unclear ownership (was this individual or team? what was their specific role?)
-- Generic bullets (could appear on any resume in any company)
-- Passive voice or weak sentence structure
-- Repetitive structure across bullets
-
-STEP 3 — IDENTIFY CONTEXT GAPS
-
-What critical information is MISSING that would make this entry exceptional?
-Focus on:
-- Scale: How many users, requests/sec, records, team size?
-- Performance: Did this reduce latency, improve uptime, speed up builds? By what %?
-- Business impact: Revenue generated, cost saved, time saved, risk reduced?
-- Technical complexity: Distributed system? ML model? Real-time? Microservices?
-- Technologies: Specific frameworks, cloud providers, databases, languages?
-- Ownership level: Did they design, architect, implement, or maintain?
-- Timeline: How long did this take? Sprint, quarter, year?
-
-STEP 4 — GENERATE TARGETED FOLLOW-UP QUESTIONS
-
-Generate 3–5 high-quality, specific questions that would extract the missing context.
-These questions should be:
-- Specific to THIS entry (not generic)
-- Aimed at extracting concrete metrics or technical specifics
-- Ordered by impact (most important first)
-- Phrased so the user can answer with facts
-
-BAD QUESTIONS (never generate these):
-- "Can you explain more?"
-- "What did you do?"
-- "Add more details"
-
-GOOD QUESTIONS:
-- "What was the scale of this system — how many users or requests per second did it handle?"
-- "Did this improve latency, uptime, or throughput? By how much?"
-- "Which specific AWS services, databases, or frameworks did you use?"
-- "Was this your individual contribution or part of a team? What was your specific role?"
-- "What business outcome resulted — cost saved, revenue generated, incidents reduced?"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-OUTPUT FORMAT (strict JSON, no markdown, no extra text):
-
-{{
-  "entry_id": "{entry_id}",
-  "score": 6.5,
-  "strength_level": "average",
-  "issues": [
-    "No quantified metrics anywhere",
-    "Vague ownership — unclear if led or assisted",
-    "Generic bullets — 'worked on' appears 3 times"
-  ],
-  "context_gaps": [
-    "Scale of system (users, data volume, requests/sec)",
-    "Performance improvements and % change",
-    "Specific tech stack beyond language"
-  ],
-  "reasoning": "This entry describes task execution but reads like a job description rather than an achievement record. A recruiter scanning this in 10 seconds would see no differentiation. There are no metrics, no impact statements, and no clarity on what this candidate specifically built or led.",
-  "follow_up_questions": [
-    "How many users or requests per day did this system serve?",
-    "Did this work reduce any latency, cost, or error rate? By how much?",
-    "What was your specific role — did you design, implement, or review?",
-    "Which databases, cloud services, or frameworks did you use?"
-  ]
-}}
-
-Strength levels: "weak" (0–3), "average" (4–6), "strong" (7–8), "exceptional" (9–10)
-"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PHASE 1B — BULK SCORING (background, lightweight, for ImpactScoreBadge)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_SCORE_PROMPT = """\
-You are a senior technical recruiter evaluating resume entries.
-
-Score each entry on a scale of 0–10 based on:
-1. Impact & Outcomes (quantified results, metrics, business value) — 35%
-2. Clarity & Action Verbs (strong verbs, concise language) — 25%
-3. Technical Depth (specific tools, frameworks, scale) — 25%
-4. Structure & Completeness (enough detail, not vague) — 15%
-
-STRICT RULES:
-- Do NOT inflate scores. Most mid-level candidates score 4–7.
-- Score 8–10 ONLY if there are clear metrics AND strong technical depth.
-- Score 1–4 if bullets are vague, passive, or missing impact.
-- Score independently per entry. Do NOT average the whole section.
-- Return ONLY a valid JSON array. No extra text, no markdown.
-
-Output schema:
-[
-  {{
-    "entry_id": "exp_0",
-    "score": 5.5,
-    "reasons": ["No quantified metrics", "Good action verbs but tools not specified"]
-  }}
-]
-
-Resume entries to score:
-{entries_json}
-
-Output (JSON array only):
-"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PHASE 2 — INTERVIEW PROMPT (Context Extraction, ONE Q at a time)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_ENTRY_INTERVIEW_PROMPT = """\
-You are an expert resume coach conducting a targeted interview to extract missing context from a candidate's resume entry.
-
-Your mission: Extract the specific facts, metrics, and technical details that will transform this entry from task-description to impact-driven achievement.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-ENTRY BEING IMPROVED:
-{entry_json}
-
-SECTION TYPE: {section}
-
-USER CONTEXT & GOALS:
-{user_context}
-
-PRE-IDENTIFIED GAPS (target these with your questions):
-{pre_identified_questions}
-
-CONVERSATION SO FAR:
-{chat_history}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-INTERVIEW RULES:
-1. Ask ONLY ONE question at a time. Never ask multiple questions at once.
-2. Start with the most impactful missing information (metrics, scale, business impact).
-3. After the user answers, acknowledge briefly (1 sentence) and pivot to the next gap.
-4. Keep your replies conversational and human — not robotic.
-5. If you already have enough data to write 3+ quantified, specific, differentiated bullets, set ready_to_propose: true.
-6. If the user says "skip", "done", "that's all" or similar, set ready_to_propose: true.
-7. Track which pre-identified gaps have been answered. Prioritize uncovered ones.
-8. Your confidence_score (0–100) should reflect how much strong, specific, quantified content you have collected.
-
-EXAMPLES OF GOOD QUESTIONS:
-- "How many daily active users did this system serve at peak load?"
-- "What specific performance improvement did you achieve — latency, throughput, error rate?"
-- "Which cloud services or databases did you use for this?"
-- "Was this your solo contribution, or part of a team effort? What was your specific ownership?"
-- "Did this result in cost savings, revenue impact, or reduced incidents?"
-
-Output (JSON only):
-{{
-  "reply_text": "Your next conversational question or acknowledgment (1–2 sentences max)",
-  "confidence_score": 65,
-  "ready_to_propose": false
-}}
-"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PHASE 3 — ELITE IMPROVEMENT PROMPT (Industry-Grade, ATS-Optimized, STAR)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_ENTRY_IMPROVE_PROMPT = """\
-You are a world-class resume writer who has helped candidates land roles at FAANG, YC startups, unicorns, and top consulting firms.
-
-You write with surgical precision. Every word earns its place.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-USER CONTEXT:
-Target Role: {target_role}
-Target Companies: {target_companies}
-Seniority Level: {seniority_level}
-Industry: {industry}
-
-ORIGINAL ENTRY (do NOT change title, company, or period):
-{entry_json}
-
-INTERVIEW TRANSCRIPT (use these facts to enrich bullets):
-{chat_history}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-YOUR REWRITE INSTRUCTIONS:
-
-FRAMEWORK: Apply the STAR principle to each bullet:
-  → Situation/Context (optional, brief)
-  → Action (strong verb + specific approach/tools)
-  → Result (quantified impact — %, $, time, scale)
-
-ATS OPTIMIZATION:
-  - Embed keywords relevant to the target role and industry naturally
-  - Use industry-standard terminology (not jargon)
-  - Prioritize verbs that appear in top job descriptions for this role:
-    (Architected, Implemented, Optimized, Designed, Led, Reduced, Scaled, Automated,
-     Migrated, Deployed, Integrated, Developed, Launched, Streamlined, Drove)
-
-BULLET QUALITY STANDARDS (each bullet must pass ALL of these):
-  ✓ Starts with a strong past-tense action verb (never "I", "we", "Responsible for")
-  ✓ Contains at least ONE specific technical detail (tool, framework, service, algorithm)
-  ✓ Contains at least ONE quantified metric (%, number, scale, time, money) — use interview data
-  ✓ Describes outcome or impact, not just the task
-  ✓ Under 30 words — ruthlessly concise
-  ✓ No passive voice ("was built", "was designed" → "Built", "Designed")
-  ✓ No soft skill filler ("collaborated", "communicated", "worked closely")
-
-STRICT RULES:
-  - DO NOT hallucinate metrics not provided in original or interview
-  - DO NOT change company name, title, or period
-  - Maintain the same bullet count as the original entry
-  - If interview provided a metric, use it. If not, keep the bullet factual but sharpen the verb and structure.
-  - Each bullet must read differently — no repeated sentence structures or verbs
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Output schema (JSON only, no markdown):
-{{
-  "company": "same as input (or project name for projects)",
-  "title": "same as input",
-  "period": "same as input",
-  "bullets": [
-    "Rewritten bullet 1 — STAR-structured, metric-driven, ATS-optimized",
-    "Rewritten bullet 2",
-    ...
-  ]
-}}
-"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -383,6 +133,9 @@ async def evaluate_entry(
     entry: Dict,
     entry_id: str,
     user_context: Dict = None,
+    user_id: str = "guest",
+    feature: str = "evaluate_entry",
+    run_id: Optional[str] = None
 ) -> Dict:
     """
     4-Step recruiter analysis on a single entry.
@@ -402,16 +155,36 @@ async def evaluate_entry(
     ctx_str = json.dumps(user_context or {}, indent=2)
     entry_str = json.dumps(entry, indent=2)
 
-    prompt = _EVALUATE_ENTRY_PROMPT.format(
+    # Extract target role & company from onboarding context for dynamic prompt personalisation
+    ctx = user_context or {}
+    target_roles_raw = ctx.get("target_roles", [])
+    target_roles = (
+        ", ".join(target_roles_raw) if isinstance(target_roles_raw, list) and target_roles_raw
+        else str(target_roles_raw) if target_roles_raw
+        else "the target role"
+    )
+    target_companies_raw = ctx.get("target_companies", [])
+    target_companies = (
+        ", ".join(target_companies_raw) if isinstance(target_companies_raw, list) and target_companies_raw
+        else str(target_companies_raw) if target_companies_raw
+        else "top product-based companies"
+    )
+
+    prompt = EVALUATE_ENTRY_PROMPT.format(
         user_context=ctx_str,
         entry_json=entry_str,
         entry_id=entry_id,
+        target_roles=target_roles,
+        target_companies=target_companies,
     )
 
     raw = await llm_client.generate_json(
         prompt=prompt,
         temperature=0.1,
         max_tokens=1500,
+        user_id=user_id,
+        feature=feature,
+        run_id=run_id
     )
 
     if not isinstance(raw, dict):
@@ -450,7 +223,12 @@ async def score_entries(
     experience: List[Dict], 
     projects: List[Dict], 
     summary: Optional[str] = None, 
-    achievements: Optional[List[str]] = None
+    achievements: Optional[List[str]] = None,
+    target_roles: str = "Software Engineer",
+    target_companies: str = "Top product-based companies",
+    user_id: str = "guest",
+    feature: str = "bulk_score_entries",
+    run_id: Optional[str] = None
 ) -> Dict:
     """
     Lightweight bulk scoring for background ImpactScoreBadge display.
@@ -460,8 +238,19 @@ async def score_entries(
     if not payload:
         return {}
 
-    prompt = _SCORE_PROMPT.format(entries_json=json.dumps(payload, indent=2))
-    raw = await llm_client.generate_json(prompt=prompt, temperature=0.1, max_tokens=2048)
+    prompt = BULK_SCORE_PROMPT.format(
+        entries_json=json.dumps(payload, indent=2),
+        target_roles=target_roles,
+        target_companies=target_companies
+    )
+    raw = await llm_client.generate_json(
+        prompt=prompt, 
+        temperature=0.1, 
+        max_tokens=2048,
+        user_id=user_id,
+        feature=feature,
+        run_id=run_id
+    )
 
     scores_dict = {}
     scored_list = []
@@ -501,6 +290,9 @@ async def chat_interview_turn(
     chat_history: List[Dict[str, str]],
     user_context: Dict[str, Any] = None,
     pre_identified_questions: List[str] = None,
+    user_id: str = "guest",
+    feature: str = "entry_interview",
+    run_id: Optional[str] = None
 ) -> Dict:
     """
     Generate the next AI question in the context-extraction interview.
@@ -520,7 +312,7 @@ async def chat_interview_turn(
         f"- {q}" for q in (pre_identified_questions or [])
     ) or "(No pre-identified questions — use general gap-detection)"
 
-    prompt = _ENTRY_INTERVIEW_PROMPT.format(
+    prompt = ENTRY_INTERVIEW_PROMPT.format(
         section=section,
         entry_json=json.dumps(entry, indent=2),
         chat_history=history_str,
@@ -528,7 +320,14 @@ async def chat_interview_turn(
         pre_identified_questions=questions_str,
     )
 
-    raw = await llm_client.generate_json(prompt=prompt, temperature=0.4, max_tokens=512)
+    raw = await llm_client.generate_json(
+        prompt=prompt, 
+        temperature=0.4, 
+        max_tokens=512,
+        user_id=user_id,
+        feature=feature,
+        run_id=run_id
+    )
 
     if isinstance(raw, dict) and "reply_text" in raw:
         return {
@@ -552,6 +351,9 @@ async def improve_entry(
     entry: Dict,
     chat_history: List[Dict[str, str]],
     user_context: Dict[str, Any] = None,
+    user_id: str = "guest",
+    feature: str = "improve_entry",
+    run_id: Optional[str] = None
 ) -> Tuple[Dict, List[Dict]]:
     """
     Generate industry-grade, ATS-optimized, STAR-structured bullets
@@ -569,7 +371,7 @@ async def improve_entry(
         transcript_lines.append(f"{role}: {msg.get('content', '')}")
     transcript_str = "\n".join(transcript_lines) if transcript_lines else "No interview context provided."
 
-    prompt = _ENTRY_IMPROVE_PROMPT.format(
+    prompt = ELITE_IMPROVE_PROMPT.format(
         target_role=ctx_fields["target_role"],
         target_companies=ctx_fields["target_companies"],
         seniority_level=ctx_fields["seniority_level"],
@@ -578,7 +380,14 @@ async def improve_entry(
         chat_history=transcript_str,
     )
 
-    raw = await llm_client.generate_json(prompt=prompt, temperature=0.2, max_tokens=1200)
+    raw = await llm_client.generate_json(
+        prompt=prompt, 
+        temperature=0.2, 
+        max_tokens=1200,
+        user_id=user_id,
+        feature=feature,
+        run_id=run_id
+    )
 
     improved_entry = {**entry}
     if isinstance(raw, dict):
@@ -652,6 +461,9 @@ async def background_score_and_save(user_id: str, context_id: int, db_engine, co
     try:
         with Session(db_engine) as session:
             profile = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).first()
+            from core.models import UserContext
+            context = session.exec(select(UserContext).where(UserContext.id == context_id)).first()
+            
             if not profile:
                 logger.error(f"Scoring failed: No profile found for context {context_id}")
                 return
@@ -684,8 +496,29 @@ async def background_score_and_save(user_id: str, context_id: int, db_engine, co
             data["achievements_score"] = None
             data["achievements_reasons"] = []
 
+            # Extract target roles & companies from context
+            target_roles = "the target role"
+            target_companies = "top tech companies"
+            if context:
+                ctx_data = context.onboarding_context or {}
+                tr = ctx_data.get("target_roles", [])
+                if tr:
+                    target_roles = ", ".join(tr) if isinstance(tr, list) else str(tr)
+                tc = ctx_data.get("target_companies", [])
+                if tc:
+                    target_companies = ", ".join(tc) if isinstance(tc, list) else str(tc)
+
             llm_client = LLMClient(config)
-            scores = await score_entries(llm_client, experience, projects, summary, achievements)
+            scores = await score_entries(
+                llm_client, 
+                experience, 
+                projects, 
+                summary, 
+                achievements,
+                target_roles=target_roles,
+                target_companies=target_companies,
+                user_id=user_id
+            )
 
             for i, exp in enumerate(experience):
                 eid = f"exp_{i}"

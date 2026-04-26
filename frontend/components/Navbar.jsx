@@ -34,7 +34,7 @@ export default function Navbar({ activePage, setActivePage, onOpenSettings, user
           <div className="nav-logo-icon" style={{ overflow: 'hidden', background: 'var(--accent)' }}>
             <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
-          <span className="nav-logo-text">ResumePilot</span>
+          <span className="nav-logo-text">ResumeSailor</span>
         </div>
       </div>
       

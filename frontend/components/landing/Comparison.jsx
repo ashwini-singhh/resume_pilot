@@ -4,19 +4,17 @@ import { motion } from 'framer-motion';
 const easeOut = [0.16, 1, 0.3, 1];
 
 const others = [
-  'Generic keyword stuffing',
-  'No personalization',
-  'No questions, no context',
-  'Same resume for every job',
-  'Guesses your experience',
+  'Generic suggestions',
+  'No resume scoring',
+  'No JD matching',
+  'Hallucinates missing skills',
 ];
 
 const ours = [
-  'Context-aware improvements',
-  'AI interviews you first',
-  'Impact scoring per bullet',
-  'Role-specific tailoring',
-  'Uses YOUR real story',
+  'Objective resume scoring',
+  'Deep JD matching',
+  'Section-level insights',
+  'AI asks clarifying questions',
 ];
 
 export default function Comparison() {
@@ -120,7 +118,7 @@ export default function Comparison() {
                 fontFamily: 'JetBrains Mono, monospace',
                 textTransform: 'uppercase', letterSpacing: '0.1em',
                 marginBottom: 24,
-              }}>✓ ResumePilot</div>
+              }}>✓ ResumeSailor</div>
               {ours.map((item, i) => (
                 <div key={i} style={{
                   display: 'flex', alignItems: 'flex-start', gap: 12,

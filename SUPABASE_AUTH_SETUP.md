@@ -1,6 +1,6 @@
 # Supabase & Google Auth Setup Guide 🔐
 
-This guide explains how to configure **Supabase** and **Google OAuth** for ResumePilot.
+This guide explains how to configure **Supabase** and **Google OAuth** for ResumeSailor.
 
 ---
 
@@ -17,7 +17,7 @@ This guide explains how to configure **Supabase** and **Google OAuth** for Resum
 To enable "Sign in with Google", you need credentials from the Google Cloud Console.
 
 1.  **Google Cloud Console**: Go to [console.cloud.google.com](https://console.cloud.google.com/).
-2.  **Create Project**: Create a new project for "ResumePilot".
+2.  **Create Project**: Create a new project for "ResumeSailor".
 3.  **OAuth Consent Screen**:
     *   Configure as **External**.
     *   Add your support email and developer contact info.

@@ -375,7 +375,7 @@ export default function Onboarding() {
   return (
     <div className="onboarding-page">
       <Head>
-        <title>Setup | ResumePilot</title>
+        <title>Setup | ResumeSailor</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
       

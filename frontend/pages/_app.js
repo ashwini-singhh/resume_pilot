@@ -1,3 +1,4 @@
+// [RESUME_SAILOR_SYNC] 2026-04-26 11:32
 import '../styles/globals.css';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
@@ -7,7 +8,10 @@ import * as api from '../lib/api';
 // Pages that don't require authentication
 const PUBLIC_ROUTES = ['/', '/auth/callback'];
 
+
+
 function MyApp({ Component, pageProps }) {
+  // ... (rest of the component logic)
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
@@ -79,7 +83,11 @@ function MyApp({ Component, pageProps }) {
     );
   }
 
-  return <Component {...pageProps} />;
+  return (
+    <>
+      <Component {...pageProps} />
+    </>
+  );
 }
 
 export default MyApp;

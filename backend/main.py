@@ -3,12 +3,14 @@ Resume AI Pipeline — FastAPI Backend
 Uses Agent + Config + LLMClient exactly like the original Streamlit system.
 """
 
+import os
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Request, Header
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any, Tuple
 from dotenv import load_dotenv
+from sqlalchemy import func
 
 # Load .env before anything else reads env vars
 load_dotenv(override=True)
@@ -24,6 +26,7 @@ from core.matcher import extract_jd_keywords, match_bullets_to_keywords, compute
 from core.optimizer import optimize_bullets_batch, apply_decisions
 from core.formatter import compute_optimization_stats
 from core.condenser import condense_sources_into_profile, trigger_condensation_and_save
+from core.usage_service import get_run_usage
 from core.llm_client.llm_client import LLMClient
 from core.bullet_improver import (
     ContextMessage,
@@ -56,17 +59,32 @@ from core.models import (
     MasterProfile,
     OptimizationSuggestion,
     UserContext,
-    User
+    User,
+    LLMUsage
 )
 from sqlmodel import SQLModel, Session, select
 from core.payment_service import PaymentService
+from core.github import (
+    summarise_repo_for_resume,
+    _extract_username,
+    fetch_github_repos_list,
+    fetch_github_profile,
+    fetch_single_repo_details
+)
+from core.interview_agent import run_interview_turn
 
 
 app = FastAPI(title="Resume AI Pipeline API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For dev
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        os.getenv("FRONTEND_URL", "https://resumesailor.com"),
+    ] + os.getenv("ALLOWED_ORIGINS", "").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,9 +105,30 @@ async def general_error_handler(request, exc: Exception):
 # ── Global Config (reads API_KEY / BASE_URL from .env) ──
 _config = Config()
 
+# ── Global LLM Clients ──
+_primary_llm = LLMClient(
+    api_key=_config.api_key, 
+    base_url=_config.base_url, 
+    model_name=_config.model_name
+)
+_cheap_llm = LLMClient(
+    api_key=_config.api_key, 
+    base_url=_config.base_url, 
+    model_name=_config.cheap_model_name
+)
+
 # ── Startup: ensure context_messages table exists and bootstrap profile ──
 @app.on_event("startup")
 async def _on_startup():
+    import logging
+    logger = logging.getLogger("uvicorn")
+    
+    # Validate Critical Environment Variables
+    critical_vars = ["API_KEY", "DATABASE_URL", "STRIPE_SECRET_KEY"]
+    missing = [v for v in critical_vars if not os.getenv(v)]
+    if missing:
+        logger.warning(f"⚠️ MISSING CRITICAL ENV VARS: {', '.join(missing)}. Some features may not work in production.")
+
     from core.models import MasterProfile, User
     from sqlmodel import Session, select
     SQLModel.metadata.create_all(_db_engine)
@@ -134,6 +173,7 @@ class CondenseRequest(BaseModel):
     current_profile: Optional[Dict] = None
     user_id: str = "default-id"
     context_id: int
+    run_id: Optional[str] = None
 
 class OnboardingRequest(BaseModel):
     user_id: str
@@ -149,6 +189,35 @@ class CheckoutSessionRequest(BaseModel):
     user_id: str
     amount: int  # Example: 200
 
+class GithubMergeRequest(BaseModel):
+    user_id: str
+    context_id: int
+    github_url: str
+    selected_repo_names: List[str]
+    token: Optional[str] = None
+
+class CloneProfileRequest(BaseModel):
+    user_id: str
+    profile_name: str
+    profile_data: Dict[str, Any]
+
+class InterviewTurnRequest(BaseModel):
+    user_id: str
+    context_id: int
+    section_type: str
+    chat_history: List[Dict[str, str]]
+    run_id: Optional[str] = None
+
+class FeedbackRequest(BaseModel):
+    user_id: str
+    type: str
+    message: str
+    rating: Optional[int] = None
+    context: Optional[Dict[str, Any]] = {}
+    page: Optional[str] = None
+    feature: Optional[str] = None
+
+
 # ── Usage Helper ──────────────────────────────────────────
 
 async def check_usage_limit(user_id: str):
@@ -157,6 +226,14 @@ async def check_usage_limit(user_id: str):
         if not user:
             raise HTTPException(status_code=403, detail="User not found")
             
+        # 1. Check Budget Limits (Hard Stop)
+        if user.current_spend >= user.max_spend:
+            raise HTTPException(
+                status_code=402, 
+                detail=f"Budget exceeded ({user.current_spend:.2f}/{user.max_spend:.2f}). Please upgrade or contact admin."
+            )
+
+        # 2. Check Trial Limitations
         if user.subscription_status == "active":
             return True
             
@@ -166,7 +243,7 @@ async def check_usage_limit(user_id: str):
             session.commit()
             return True
             
-        raise HTTPException(status_code=402, detail="Usage limit reached. Please upgrade to continue.")
+        raise HTTPException(status_code=402, detail="No more free optimization runs remaining. Please upgrade.")
 
 
 # ── Endpoints ─────────────────────────────────────────────
@@ -191,8 +268,14 @@ async def parse_resume(file: Optional[UploadFile] = File(None), text: Optional[s
     else:
         raise HTTPException(status_code=400, detail="Must provide either file or text")
 
-    bullets = extract_bullets(resume_text)
+    # 1. Triage: Identify sections (Cheap)
     sections = extract_sections(resume_text)
+    
+    # 2. Detailed extraction: get bullets for each section (Primary/Heavy)
+    # Note: These are regex based but we might want to wrap them in LLM calls if needed.
+    # For now, let's just use the regex outputs and provide the raw_text.
+    bullets = extract_bullets(resume_text)
+    
     return {
         "raw_text": resume_text,
         "bullets": bullets,
@@ -233,7 +316,7 @@ async def generate_suggestions(req: SuggestionRequest):
             )
         else:
             # Server-side Config (reads from .env)
-            client = LLMClient(_config)
+            client = _primary_llm
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"LLM Client configuration error: {str(e)}")
 
@@ -253,7 +336,7 @@ async def condense_profile(req: CondenseRequest, background_tasks: BackgroundTas
     """
     await check_usage_limit(req.user_id)
     try:
-        # Use the multi-profile persistence trigger
+        # Trigger LLM Condensation (Primary/Heavy)
         result = await trigger_condensation_and_save(
             config=_config,
             user_id=req.user_id,
@@ -261,12 +344,19 @@ async def condense_profile(req: CondenseRequest, background_tasks: BackgroundTas
             pdf_text=req.pdf_text,
             github_data=req.github_data,
             manual_data=req.manual_data,
+            llm_client=_primary_llm,
+            run_id=req.run_id
         )
         
         # Dispatch background scoring scoped to context
         background_tasks.add_task(background_score_and_save, req.user_id, req.context_id, _db_engine, _config)
         
-        return AppResponse.ok(data={"profile": result, "context_id": req.context_id})
+        usage_stats = get_run_usage(req.run_id) if req.run_id else {}
+        
+        return AppResponse.ok(data={
+            **result,
+            "usage": usage_stats
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Condensation failed: {str(e)}")
 
@@ -396,38 +486,91 @@ async def submit_onboarding(req: OnboardingRequest):
         })
 
 
+@app.post("/api/profiles/clone")
+async def clone_profile(req: CloneProfileRequest, background_tasks: BackgroundTasks):
+    """
+    Create a new profile/persona snapshot based on provided data.
+    Used for saving JD-optimized versions.
+    """
+    from sqlmodel import Session
+    from core.models import UserContext, MasterProfile
+    
+    with Session(_db_engine) as session:
+        # 1. Create the new context
+        new_context = UserContext(
+            user_id=req.user_id,
+            name=req.profile_name,
+            onboarding_context={}, # Optional: could fill with defaults
+            chat_context={}
+        )
+        session.add(new_context)
+        session.commit()
+        session.refresh(new_context)
+        
+        # 2. Save the master profile data to this new context
+        new_profile = MasterProfile(
+            user_id=req.user_id,
+            context_id=new_context.id,
+            data=req.profile_data
+        )
+        session.add(new_profile)
+        session.commit()
+        
+        # 3. Trigger a background re-score for the new context
+        background_tasks.add_task(background_score_and_save, req.user_id, new_context.id, _db_engine, _config)
+        
+        return {
+            "status": "success",
+            "context_id": new_context.id,
+            "profile_name": new_context.name
+        }
+
+
 @app.delete("/api/user/{user_id}")
 async def delete_account(user_id: str):
-    """Permanently delete user profile, context, and the user record."""
-    from sqlmodel import Session, select
-    from core.models import User, UserContext, MasterProfile
+    """Permanently delete user profile, context, and all associated data records."""
+    from sqlmodel import Session, select, delete
+    from core.models import (
+        User, UserContext, MasterProfile, RawSource, 
+        JobDescription, OptimizationSuggestion, EntryScore, GapAnalysis
+    )
 
     with Session(_db_engine) as session:
-        # 1. Delete all profiles for this user
-        profiles = session.exec(select(MasterProfile).where(MasterProfile.user_id == user_id)).all()
-        for p in profiles:
-            session.delete(p)
-
-        # 2. Delete all contexts for this user
-        contexts = session.exec(select(UserContext).where(UserContext.user_id == user_id)).all()
-        for c in contexts:
-            session.delete(c)
-
-        # 3. Delete the user record itself
+        # 1. Delete low-level dependencies first (reference JDs or Contexts)
+        session.exec(delete(OptimizationSuggestion).where(OptimizationSuggestion.user_id == user_id))
+        session.exec(delete(EntryScore).where(EntryScore.user_id == user_id))
+        session.exec(delete(GapAnalysis).where(GapAnalysis.user_id == user_id))
+        
+        # 2. Delete Job Descriptions (reference Contexts)
+        session.exec(delete(JobDescription).where(JobDescription.user_id == user_id))
+        
+        # 3. Delete Profiles and Sources (reference Contexts)
+        session.exec(delete(RawSource).where(RawSource.user_id == user_id))
+        session.exec(delete(MasterProfile).where(MasterProfile.user_id == user_id))
+        
+        # 4. Delete Contexts (reference User)
+        session.exec(delete(UserContext).where(UserContext.user_id == user_id))
+        
+        # 5. Delete the User record itself
         user = session.exec(select(User).where(User.id == user_id)).first()
         if user:
             session.delete(user)
 
         session.commit()
 
-    return {"status": "success", "message": "Account deleted."}
+    return {"status": "success", "message": "Account and all associated records deleted."}
+
+
 
 
 @app.delete("/api/profile/{user_id}/{context_id}")
 async def delete_profile(user_id: str, context_id: int):
-    """Delete a specific persona (context) and its associated resume data."""
-    from sqlmodel import Session, select
-    from core.models import UserContext, MasterProfile, RawSource, JobDescription, OptimizationSuggestion
+    """Delete a specific persona (context) and all its associated data."""
+    from sqlmodel import Session, select, delete
+    from core.models import (
+        UserContext, MasterProfile, RawSource, JobDescription, 
+        OptimizationSuggestion, EntryScore, GapAnalysis
+    )
 
     with Session(_db_engine) as session:
         # 1. Verify existence and ownership
@@ -435,28 +578,21 @@ async def delete_profile(user_id: str, context_id: int):
         if not context:
             raise HTTPException(status_code=404, detail="Profile/Context not found or unauthorized.")
 
-        # 2. Delete associated data
-        # MasterProfile
-        mp = session.exec(select(MasterProfile).where(MasterProfile.context_id == context_id)).all()
-        for p in mp: session.delete(p)
+        # 2. Delete associated data in correct cascading order
+        session.exec(delete(OptimizationSuggestion).where(OptimizationSuggestion.context_id == context_id))
+        session.exec(delete(EntryScore).where(EntryScore.context_id == context_id))
+        session.exec(delete(GapAnalysis).where(GapAnalysis.context_id == context_id))
         
-        # RawSource
-        rs = session.exec(select(RawSource).where(RawSource.context_id == context_id)).all()
-        for r in rs: session.delete(r)
+        session.exec(delete(JobDescription).where(JobDescription.context_id == context_id))
         
-        # JobDescription
-        jd = session.exec(select(JobDescription).where(JobDescription.context_id == context_id)).all()
-        for j in jd: session.delete(j)
-        
-        # OptimizationSuggestion
-        opt = session.exec(select(OptimizationSuggestion).where(OptimizationSuggestion.context_id == context_id)).all()
-        for o in opt: session.delete(o)
+        session.exec(delete(RawSource).where(RawSource.context_id == context_id))
+        session.exec(delete(MasterProfile).where(MasterProfile.context_id == context_id))
         
         # 3. Delete the context itself
         session.delete(context)
         session.commit()
 
-    return {"status": "success", "message": "Profile persona deleted."}
+    return {"status": "success", "message": "Profile persona and all its data deleted."}
 
 
 
@@ -491,9 +627,8 @@ async def improve_generate_questions(req: GenerateQuestionsRequest):
     Stores questions as 'assistant' messages in context_messages.
     """
     try:
-        client = LLMClient(_config)
         questions = await generate_questions(
-            llm_client=client,
+            llm_client=_primary_llm,
             run_id=req.run_id,
             section=req.section,
             bullet_text=req.bullet_text,
@@ -529,9 +664,8 @@ async def improve_generate_improvement(req: GenerateImprovementRequest):
     Saves to suggestions table and returns result.
     """
     try:
-        client = LLMClient(_config)
         improved_bullet, diff_tokens = await generate_improvement(
-            llm_client=client,
+            llm_client=_primary_llm,
             original_bullet=req.original_bullet,
             questions=req.questions,
             answers=req.answers,
@@ -648,9 +782,8 @@ async def api_score_entries(req: ScoreEntriesRequest):
     Scoring is entry-level — not per bullet, not per section.
     """
     try:
-        client = LLMClient(_config)
         result = await score_entries(
-            llm_client=client,
+            llm_client=_primary_llm,
             experience=req.experience,
             projects=req.projects,
         )
@@ -675,11 +808,14 @@ async def api_global_diagnostic(req: RunDiagnosticRequest):
         if not profile_data:
             raise HTTPException(status_code=400, detail="Profile data is missing.")
 
-        client = LLMClient(_config)
+        # Global competitive feedback (Cheap with Primary fallback)
         result = await run_global_diagnostic(
-            llm_client=client,
+            llm_client=_cheap_llm,
             profile_data=profile_data,
-            user_context=user_context
+            user_context=user_context,
+            user_id=req.user_id,
+            feature="global_diagnostic",
+            fallback_client=_primary_llm
         )
 
         # Persist the diagnostic result
@@ -709,9 +845,8 @@ async def api_generate_section(req: GenerateSectionRequest):
         if not profile_data:
             raise HTTPException(status_code=400, detail="Profile data is missing.")
 
-        client = LLMClient(_config)
         content = await generate_section_content(
-            llm_client=client,
+            llm_client=_primary_llm,
             section=req.section,
             profile_data=profile_data,
             user_context=user_context
@@ -737,9 +872,8 @@ async def api_entry_evaluate(req: EvaluateEntryRequest):
         if not entry:
             raise HTTPException(status_code=404, detail=f"Entry '{req.entry_id}' not found in profile.")
         
-        client = LLMClient(_config)
         result = await evaluate_entry(
-            llm_client=client,
+            llm_client=_primary_llm,
             entry=entry,
             entry_id=req.entry_id,
             user_context=user_context,
@@ -758,9 +892,8 @@ async def api_entry_interview_turn(req: EntryInterviewTurnRequest):
     Accepts pre_identified_questions from the evaluation step.
     """
     try:
-        client = LLMClient(_config)
         turn_response = await chat_interview_turn(
-            llm_client=client,
+            llm_client=_primary_llm,
             section=req.section,
             entry=req.entry,
             chat_history=req.chat_history,
@@ -787,9 +920,8 @@ async def api_entry_improve(req: ImproveEntryRequest):
     """
     await check_usage_limit(req.user_id)
     try:
-        client = LLMClient(_config)
         improved_entry, bullet_diffs = await improve_entry(
-            llm_client=client,
+            llm_client=_primary_llm,
             entry=req.entry,
             chat_history=req.chat_history,
             user_context=req.user_context,
@@ -938,8 +1070,7 @@ async def api_jd_analyze(req: JDAnalyzeRequest):
             session.refresh(jd_record)
             jd_id = jd_record.id
 
-        client = LLMClient(_config)
-        scored = await run_relevance_scoring(client, req.jd_text, entries, user_context)
+        scored = await run_relevance_scoring(_cheap_llm, req.jd_text, entries, user_context)
         save_entry_scores(scored, jd_id, req.user_id, req.context_id, _db_engine)
 
         return {
@@ -1003,8 +1134,7 @@ async def api_jd_optimize(req: JDOptimizeRequest):
         if not selected:
             raise HTTPException(status_code=400, detail="No valid entries found for the given IDs.")
 
-        client = LLMClient(_config)
-        optimized = await run_ats_optimization(client, jd_text, selected)
+        optimized = await run_ats_optimization(_primary_llm, jd_text, selected)
         result_with_ids = save_optimization_suggestions(
             optimized, req.jd_id, req.user_id, req.context_id, _db_engine
         )
@@ -1053,8 +1183,8 @@ async def api_jd_gaps(req: JDGapsRequest):
         entries = _build_entries_list(profile_data)
         skills = profile_data.get("skills", {})
 
-        client = LLMClient(_config)
-        gap = await run_gap_analysis(client, jd_text, entries, skills, user_context, scored_list)
+        # Gap analysis (Cheap)
+        gap = await run_gap_analysis(_cheap_llm, jd_text, entries, skills, user_context, scored_list)
         save_gap_analysis(gap, req.jd_id, req.user_id, req.context_id, _db_engine)
 
         return {
@@ -1065,6 +1195,114 @@ async def api_jd_gaps(req: JDGapsRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gap analysis failed: {str(e)}")
+
+
+# ── Interview Agent Flow ──────────────────────────────────────────────────────
+
+@app.post("/api/interview/turn")
+async def api_interview_turn(req: InterviewTurnRequest):
+    """Adaptive interview turn for extracting resume context."""
+    try:
+        profile_data, user_context = _get_profile_and_context(req.user_id, req.context_id)
+        
+        # Pass BOTH clients for adaptive escalation
+        result = await run_interview_turn(
+            primary_client=_primary_llm,
+            cheap_client=_cheap_llm,
+            user_context=user_context,
+            profile_json=profile_data,
+            section_type=req.section_type,
+            chat_history=req.chat_history,
+            user_id=req.user_id,
+            run_id=req.run_id
+        )
+        
+        usage_stats = get_run_usage(req.run_id) if req.run_id else {}
+        
+        return AppResponse.ok(data={
+            **result,
+            "usage": usage_stats
+        })
+    except Exception as e:
+        logger.error(f"Interview turn API failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Interview failed: {str(e)}")
+
+# ── GitHub Integration Flow ──────────────────────────────────────────────────
+
+@app.get("/api/github/repos")
+async def api_github_fetch_repos(url: str, token: Optional[str] = None):
+    """Stage 1: Fetch list of repositories for selection."""
+    try:
+        repos = fetch_github_repos_list(url, token=token)
+        return AppResponse.ok(data={"repos": repos})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch repos: {str(e)}")
+
+
+@app.post("/api/github/merge")
+async def api_github_merge(req: GithubMergeRequest, background_tasks: BackgroundTasks):
+    """Stage 2: Summarize selected repos and merge into Master Profile."""
+    await check_usage_limit(req.user_id)
+    
+    username = _extract_username(req.github_url)
+    if not username:
+        raise HTTPException(status_code=400, detail="Invalid GitHub URL")
+
+    client = LLMClient(_config)
+    summarized_projects = []
+
+    try:
+        for repo_name in req.selected_repo_names:
+            # 1. Fetch full details (README, etc)
+            details = fetch_single_repo_details(username, repo_name, token=req.token)
+            if not details: continue
+
+            # 2. Summarize via LLM
+            summary = await summarise_repo_for_resume(details, client)
+            summarized_projects.append(summary)
+
+        if not summarized_projects:
+            return {"status": "no_changes", "message": "No repositories were successfully summarized."}
+
+        # 3. Merge into Master Profile
+        with Session(_db_engine) as session:
+            profile_rec = session.exec(
+                select(MasterProfile).where(MasterProfile.context_id == req.context_id)
+            ).first()
+            
+            if not profile_rec:
+                raise HTTPException(status_code=404, detail="Master Profile not found for this context.")
+
+            data = profile_rec.data
+            existing_projects = data.get("projects", [])
+            existing_names = {p.get("name") for p in existing_projects}
+
+            new_additions = []
+            for sp in summarized_projects:
+                if sp["name"] not in existing_names:
+                    new_additions.append(sp)
+            
+            if new_additions:
+                data["projects"] = existing_projects + new_additions
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(profile_rec, "data")
+                session.add(profile_rec)
+                session.commit()
+                
+                # Rescore in background since we added new content
+                background_tasks.add_task(background_score_and_save, req.user_id, req.context_id, _db_engine, _config)
+
+            return {
+                "status": "merged",
+                "added_count": len(new_additions),
+                "profile": data
+            }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"GitHub merge failed: {str(e)}")
+
 
 
 # ── Suggestion Actions ─────────────────────────────────────────────────────────
@@ -1175,3 +1413,104 @@ def get_user_status(user_id: str):
             "subscription_status": user.subscription_status,
             "free_runs_remaining": user.free_runs_remaining
         }
+
+# ── Admin & Usage Analytics ──────────────────────────────────────────────────
+
+@app.get("/api/admin/usage/summary")
+async def get_usage_summary():
+    """Overall spend and token totals."""
+    with Session(_db_engine) as session:
+        # Sums
+        total_cost = session.exec(select(func.sum(LLMUsage.cost))).one() or 0.0
+        total_tokens = session.exec(select(func.sum(LLMUsage.total_tokens))).one() or 0
+        total_requests = session.exec(select(func.count(LLMUsage.id))).one() or 0
+        
+        return {
+            "total_cost": float(total_cost),
+            "total_tokens": int(total_tokens),
+            "total_requests": int(total_requests)
+        }
+
+@app.get("/api/admin/usage/by-feature")
+async def get_usage_by_feature():
+    """Cost breakdown by product feature."""
+    with Session(_db_engine) as session:
+        results = session.query(
+            LLMUsage.feature,
+            func.sum(LLMUsage.cost).label("total_cost"),
+            func.count(LLMUsage.id).label("request_count")
+        ).group_by(LLMUsage.feature).all()
+        
+        return [
+            {"feature": r[0], "total_cost": float(r[1] or 0.0), "request_count": int(r[2] or 0)} 
+            for r in results
+        ]
+
+@app.get("/api/admin/usage/by-user")
+async def get_usage_by_user():
+    """Identify top spending users."""
+    with Session(_db_engine) as session:
+        results = session.query(
+            LLMUsage.user_id,
+            func.sum(LLMUsage.cost).label("total_cost"),
+            func.count(LLMUsage.id).label("total_requests")
+        ).group_by(LLMUsage.user_id).order_by(func.sum(LLMUsage.cost).desc()).limit(10).all()
+        
+        return [
+            {"user_id": r[0], "total_cost": float(r[1] or 0.0), "total_requests": int(r[2] or 0)}
+            for r in results
+        ]
+
+@app.get("/api/admin/usage/timeline")
+async def get_usage_timeline():
+    """Daily cost and token trends."""
+    with Session(_db_engine) as session:
+        # Note: SQLite specific date formatting
+        date_func = func.date(LLMUsage.created_at)
+        results = session.query(
+            date_func,
+            func.sum(LLMUsage.cost).label("daily_cost"),
+            func.sum(LLMUsage.total_tokens).label("daily_tokens")
+        ).group_by(date_func).order_by(date_func.desc()).all()
+        
+        return [
+            {"date": str(r[0]), "cost": float(r[1] or 0.0), "tokens": int(r[2] or 0)}
+            for r in results
+        ]
+
+# ── Feedback System ───────────────────────────────────────
+
+@app.post("/api/feedback")
+async def submit_feedback(req: FeedbackRequest):
+    """Capture structured user feedback."""
+    from core.models import Feedback
+    with Session(_db_engine) as session:
+        feedback = Feedback(
+            user_id=req.user_id,
+            type=req.type,
+            message=req.message,
+            rating=req.rating,
+            context=req.context,
+            page=req.page,
+            feature=req.feature
+        )
+        session.add(feedback)
+        session.commit()
+        return AppResponse.ok(message="Feedback submitted successfully")
+
+@app.get("/api/feedback")
+async def get_feedback(type: Optional[str] = None, feature: Optional[str] = None, rating: Optional[int] = None):
+    """Admin endpoint to retrieve feedback with filtering."""
+    from core.models import Feedback
+    with Session(_db_engine) as session:
+        statement = select(Feedback)
+        if type:
+            statement = statement.where(Feedback.type == type)
+        if feature:
+            statement = statement.where(Feedback.feature == feature)
+        if rating:
+            statement = statement.where(Feedback.rating == rating)
+        
+        statement = statement.order_by(Feedback.created_at.desc())
+        results = session.exec(statement).all()
+        return AppResponse.ok(data=[r.dict() for r in results])

@@ -1,8 +1,11 @@
+import logging
 import asyncio
-from openai import AsyncOpenAI, RateLimitError, APIConnectionError, AuthenticationError
+from openai import AsyncOpenAI, RateLimitError, APIConnectionError, AuthenticationError, InternalServerError, APITimeoutError
 from typing import Any, AsyncGenerator, Optional
 from .response import StreamEvent, StreamEventType, TokenUsage, TextDelta
 from util.response import LLMError
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
@@ -42,8 +45,8 @@ class LLMClient:
             # OpenRouter headers for analytics and model ranking
             is_openrouter = "openrouter.ai" in self.base_url.lower()
             headers = {
-                "HTTP-Referer": "https://resume-pilot.vercel.app",
-                "X-Title": "ResumePilot AI",
+                "HTTP-Referer": "https://resumesailor.com",
+                "X-Title": "ResumeSailor AI",
             } if is_openrouter else {}
 
             self.client = AsyncOpenAI(
@@ -64,6 +67,9 @@ class LLMClient:
         self,
         messages: list[dict[str, Any]],
         stream: bool = False,
+        user_id: str = "guest",
+        feature: str = "unknown",
+        run_id: Optional[str] = None,
         **override_kwargs,
     ) -> AsyncGenerator[StreamEvent, None]:
 
@@ -85,39 +91,48 @@ class LLMClient:
                         yield event
                 else:
                     event = await self._non_stream_response(client, kwargs)
+                    
+                    # Record usage for non-streamed calls
+                    if event.usage:
+                        from core.usage_service import record_usage
+                        record_usage(
+                            user_id=user_id,
+                            feature=feature,
+                            model=self.model_name,
+                            usage=event.usage,
+                            run_id=run_id
+                        )
+                    
                     yield event
                 return  # Success, break the retry loop
 
+            except (RateLimitError, APIConnectionError, InternalServerError, APITimeoutError) as e:
+                # Retryable errors
+                if attempt < self.max_retries:
+                    wait_time = (2 ** attempt) + 1
+                    logger.warning(f"Retrying LLM call (Attempt {attempt+1}/{self.max_retries}) due to retryable error: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    err_msg = str(e)
+                    # Classify the error for the UI
+                    error_type = "Provider Error" if isinstance(e, InternalServerError) else "Connection/RateLimit Error"
+                    yield StreamEvent(
+                        type=StreamEventType.ERROR,
+                        error=f"{error_type}: {err_msg}",
+                    )
+                    return
             except AuthenticationError as e:
                 yield StreamEvent(
                     type=StreamEventType.ERROR,
                     error=f"Authentication error: {e}. Please check your API key.",
                 )
                 return
-            except RateLimitError as e:
-                if attempt < self.max_retries:
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
-                else:
-                    yield StreamEvent(
-                        type=StreamEventType.ERROR,
-                        error=f"Rate limit exceeded: {e}",
-                    )
-                    return
-            except APIConnectionError as e:
-                if attempt < self.max_retries:
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
-                else:
-                    yield StreamEvent(
-                        type=StreamEventType.ERROR,
-                        error=f"Connection error: {e}",
-                    )
-                    return
             except Exception as e:
+                # Non-retryable or unexpected errors
+                logger.error(f"Unexpected LLM error: {str(e)}", exc_info=True)
                 yield StreamEvent(
                     type=StreamEventType.ERROR,
-                    error=str(e),
+                    error=f"Unexpected Error: {str(e)}",
                 )
                 return
 
@@ -169,8 +184,13 @@ class LLMClient:
                 total_tokens=response.usage.total_tokens,
                 prompt_tokens=response.usage.prompt_tokens,
                 completion_tokens=response.usage.completion_tokens,
-                cached_tokens=0 # Fallback
+                cached_tokens=0, # Fallback
+                cost=getattr(response.usage, "cost", 0.0) # OpenRouter specific
             )
+            
+            # Fallback check for cost in extra headers or other places if needed, 
+            # but usually OpenRouter includes it in usage if requested.
+            
             if hasattr(response.usage, "prompt_tokens_details") and response.usage.prompt_tokens_details:
                 token_usage.cached_tokens = getattr(response.usage.prompt_tokens_details, "cached_tokens", 0)
 
@@ -181,7 +201,15 @@ class LLMClient:
             finish_reason=getattr(choice, "finish_reason", None),
         )
 
-    async def generate_json(self, prompt: str, system_prompt: str = "", temperature: float = 0.1, max_tokens: int = 1024) -> Optional[dict]:
+    async def generate_json(self, 
+        prompt: str, 
+        system_prompt: str = "", 
+        temperature: float = 0.1, 
+        max_tokens: int = 1024,
+        user_id: str = "guest",
+        feature: str = "unknown",
+        run_id: Optional[str] = None
+    ) -> Optional[dict]:
         """Helper to get a full JSON response instead of a stream."""
         import json
         messages = []
@@ -190,7 +218,15 @@ class LLMClient:
         messages.append({"role": "user", "content": prompt})
 
         full_text = ""
-        async for event in self.chat_completion(messages=messages, stream=False, max_tokens=max_tokens, temperature=temperature):
+        async for event in self.chat_completion(
+            messages=messages, 
+            stream=False, 
+            max_tokens=max_tokens, 
+            temperature=temperature,
+            user_id=user_id,
+            feature=feature,
+            run_id=run_id
+        ):
             if event.type == StreamEventType.MESSAGE_COMPLETE and event.text_delta:
                 full_text = event.text_delta.content
                 break

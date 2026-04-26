@@ -19,7 +19,7 @@ class PaymentService:
                 'price_data': {
                     'currency': currency,
                     'product_data': {
-                        'name': 'ResumePilot Premium AI Credits (Unlimited)',
+                        'name': 'ResumeSailor Premium AI Credits (Unlimited)',
                         'description': 'Unlock unlimited resume analyses, bullet improvements, and JD optimizations.',
                     },
                     'unit_amount': amount * 100,  # convert to subunits (paise for INR, cents for USD)

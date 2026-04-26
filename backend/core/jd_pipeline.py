@@ -15,6 +15,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlmodel import Session, select
 
+from prompts.alignment import RELEVANCE_SCORE_PROMPT, ATS_OPTIMIZE_PROMPT, GAP_ANALYSIS_PROMPT
+
 from core.bullet_improver import compute_word_diff
 from core.models import (
     EntryScore,
@@ -41,51 +43,6 @@ def _classify(score: float) -> str:
 # STAGE 1 — Relevance Scoring
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_RELEVANCE_SCORE_PROMPT = """\
-You are a senior technical recruiter and ATS specialist performing a deep JD-to-resume alignment analysis.
-
-Your task: Score EACH resume entry against the job description and evaluate how relevant it is to the target role.
-
-SCORING CRITERIA (0–10):
-- 8–10: Directly matches core JD requirements; strong keyword overlap; clear impact signals
-- 4–7:  Partially relevant; useful context but not a perfect fit; could be improved
-- 0–3:  Off-topic, weak, or unrelated to what this JD is looking for
-
-DECISION RULES (strict):
-- score >= 7.0 → decision = "KEEP"
-- 4.0 <= score < 7.0 → decision = "OPTIONAL"
-- score < 4.0 → decision = "REMOVE"
-
-For each entry, identify:
-- matched_keywords: JD keywords that clearly appear in this entry
-- missing_keywords: High-value JD keywords NOT in this entry that COULD be added
-- reasoning: 1–2 sentence explanation of the score
-
-Job Description:
-{jd_text}
-
-User Context (target role & career goals):
-{user_context}
-
-Resume Entries:
-{entries_json}
-
-Return ONLY a valid JSON array. No markdown. No preamble.
-
-Output schema:
-[
-  {{
-    "entry_id": "exp_0",
-    "score": 7.5,
-    "decision": "KEEP",
-    "matched_keywords": ["Python", "microservices"],
-    "missing_keywords": ["Kubernetes", "SLO"],
-    "reasoning": "Strong backend system design experience matching the JD's core requirements."
-  }}
-]
-
-Output (JSON array only):
-"""
 
 
 async def run_relevance_scoring(
@@ -93,6 +50,9 @@ async def run_relevance_scoring(
     jd_text: str,
     entries: List[Dict],
     user_context: Dict,
+    user_id: str = "guest",
+    feature: str = "jd_relevance",
+    run_id: Optional[str] = None,
 ) -> List[Dict]:
     """
     Stage 1: Score all resume entries against the JD.
@@ -101,13 +61,36 @@ async def run_relevance_scoring(
     entries_json = json.dumps(entries, indent=2)
     context_str = json.dumps(user_context, indent=2)
 
-    prompt = _RELEVANCE_SCORE_PROMPT.format(
+    # Extract target role & company from onboarding context for dynamic prompt personalisation
+    target_roles_raw = user_context.get("target_roles", [])
+    target_roles = (
+        ", ".join(target_roles_raw) if isinstance(target_roles_raw, list) and target_roles_raw
+        else str(target_roles_raw) if target_roles_raw
+        else "the target role"
+    )
+    target_companies_raw = user_context.get("target_companies", [])
+    target_companies = (
+        ", ".join(target_companies_raw) if isinstance(target_companies_raw, list) and target_companies_raw
+        else str(target_companies_raw) if target_companies_raw
+        else "top product-based companies"
+    )
+
+    prompt = RELEVANCE_SCORE_PROMPT.format(
         jd_text=jd_text,
         user_context=context_str,
         entries_json=entries_json,
+        target_roles=target_roles,
+        target_companies=target_companies,
     )
 
-    raw = await llm_client.generate_json(prompt=prompt, temperature=0.2, max_tokens=2048)
+    raw = await llm_client.generate_json(
+        prompt=prompt, 
+        temperature=0.2, 
+        max_tokens=2048,
+        user_id=user_id,
+        feature=feature,
+        run_id=run_id
+    )
 
     results: List[Dict] = []
     if isinstance(raw, list):
@@ -179,47 +162,16 @@ def save_entry_scores(
 # STAGE 2 — ATS Optimization
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_ATS_OPTIMIZE_PROMPT = """\
-You are a world-class ATS-optimized resume writer helping a candidate tailor their resume for a specific job.
-
-Your task: Rewrite the bullets for this resume entry to better match the job description.
-
-RULES:
-1. Keep all factual claims — do NOT invent metrics or tools.
-2. Naturally embed the high-priority missing keywords where truthfully applicable.
-3. Each bullet must start with a strong action verb.
-4. Keep bullets under 30 words each.
-5. Match the original bullet COUNT exactly.
-6. No first-person pronouns (I, we, my).
-7. Return ONLY a valid JSON object. No markdown.
-
-Job Description:
-{jd_text}
-
-Current Entry:
-{entry_json}
-
-High-priority keywords to incorporate (where truthful):
-Matched: {matched_keywords}
-Missing (incorporate if applicable): {missing_keywords}
-
-Output schema:
-{{
-  "bullets": ["Rewritten bullet 1", "Rewritten bullet 2"],
-  "diff": {{
-    "added": ["keyword1 integrated", "quantified impact added"],
-    "removed": ["vague phrasing removed"]
-  }}
-}}
-
-Output (JSON only):
-"""
+_ATS_OPTIMIZE_PROMPT = ATS_OPTIMIZE_PROMPT
 
 
 async def run_ats_optimization(
     llm_client,
     jd_text: str,
     selected_entries: List[Dict],   # [{entry_id, entry, matched_keywords, missing_keywords}]
+    user_id: str = "guest",
+    feature: str = "ats_optimize",
+    run_id: Optional[str] = None,
 ) -> List[Dict]:
     """
     Stage 2: For each selected entry, generate ATS-optimized bullets + diffs.
@@ -237,7 +189,14 @@ async def run_ats_optimization(
             missing_keywords=json.dumps(item.get("missing_keywords", [])),
         )
 
-        raw = await llm_client.generate_json(prompt=prompt, temperature=0.3, max_tokens=1024)
+        raw = await llm_client.generate_json(
+            prompt=prompt, 
+            temperature=0.3, 
+            max_tokens=1024,
+            user_id=user_id,
+            feature=feature,
+            run_id=run_id
+        )
 
         optimized_bullets = original_bullets  # safe fallback
         llm_diff = {"added": [], "removed": []}
@@ -303,42 +262,6 @@ def save_optimization_suggestions(
 # STAGE 3 — Gap Analysis
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_GAP_ANALYSIS_PROMPT = """\
-You are a senior career coach performing a strategic gap analysis between a job description and a candidate's resume.
-
-Your task: Identify what is MISSING from the resume relative to what this job requires.
-
-Focus on:
-1. Skills mentioned in JD but absent from resume
-2. Keywords the ATS would penalize for missing
-3. Functional areas (leadership, domain knowledge, certifications) that need strengthening
-4. Concrete, actionable improvement suggestions
-
-Job Description:
-{jd_text}
-
-Candidate's Current Skills:
-{skills_json}
-
-Resume Coverage Summary (entries already scored):
-{coverage_summary}
-
-User Context (target role & goals):
-{user_context}
-
-Return ONLY a valid JSON object. No markdown.
-
-Output schema:
-{{
-  "missing_skills": ["Kubernetes", "Terraform", "MLOps"],
-  "missing_keywords": ["distributed systems", "SLO", "on-call rotation"],
-  "suggestions": "Your backend experience is strong but you lack infra/DevOps exposure critical for this SRE role. Consider adding any cloud deployment work and highlighting any incident response experience. A mention of SLO design in your current entries would significantly boost ATS scores."
-}}
-
-Output (JSON only):
-"""
-
-
 async def run_gap_analysis(
     llm_client,
     jd_text: str,
@@ -346,6 +269,9 @@ async def run_gap_analysis(
     skills: Dict,
     user_context: Dict,
     scored_entries: List[Dict],
+    user_id: str = "guest",
+    feature: str = "gap_analysis",
+    run_id: Optional[str] = None,
 ) -> Dict:
     """Stage 3: Produce a gap analysis comparing JD requirements to resume coverage."""
     # Build a text coverage summary from the scored entries
@@ -356,14 +282,37 @@ async def run_gap_analysis(
         )
     coverage_summary = "\n".join(coverage_lines) or "No scored entries available."
 
-    prompt = _GAP_ANALYSIS_PROMPT.format(
+    # Extract target role & company from onboarding context for dynamic prompt personalisation
+    target_roles_raw = user_context.get("target_roles", [])
+    target_roles = (
+        ", ".join(target_roles_raw) if isinstance(target_roles_raw, list) and target_roles_raw
+        else str(target_roles_raw) if target_roles_raw
+        else "the target role"
+    )
+    target_companies_raw = user_context.get("target_companies", [])
+    target_companies = (
+        ", ".join(target_companies_raw) if isinstance(target_companies_raw, list) and target_companies_raw
+        else str(target_companies_raw) if target_companies_raw
+        else "top product-based companies"
+    )
+
+    prompt = GAP_ANALYSIS_PROMPT.format(
         jd_text=jd_text,
         skills_json=json.dumps(skills, indent=2),
         coverage_summary=coverage_summary,
         user_context=json.dumps(user_context, indent=2),
+        target_roles=target_roles,
+        target_companies=target_companies,
     )
 
-    raw = await llm_client.generate_json(prompt=prompt, temperature=0.3, max_tokens=1024)
+    raw = await llm_client.generate_json(
+        prompt=prompt, 
+        temperature=0.3, 
+        max_tokens=1024,
+        user_id=user_id,
+        feature=feature,
+        run_id=run_id
+    )
 
     if isinstance(raw, dict):
         return {

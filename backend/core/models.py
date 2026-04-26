@@ -18,6 +18,10 @@ class User(SQLModel, table=True):
     stripe_customer_id: Optional[str] = Field(default=None)
     stripe_subscription_id: Optional[str] = Field(default=None)
 
+    # Budget Limits
+    max_spend: float = Field(default=5.0)  # Default $5.00 limit for safety
+    current_spend: float = Field(default=0.0)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserContext(SQLModel, table=True):
@@ -104,6 +108,35 @@ class GapAnalysis(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LLMUsage(SQLModel, table=True):
+    """Granular tracking of LLM requests, tokens, and costs."""
+    __tablename__ = "llmusage"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    run_id: Optional[str] = Field(default=None, index=True)
+    feature: str = Field(index=True)
+    model: str = Field(index=True)
+    prompt_tokens: int = Field(default=0)
+    completion_tokens: int = Field(default=0)
+    total_tokens: int = Field(default=0)
+    cost: float = Field(default=0.0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class Feedback(SQLModel, table=True):
+    """Structured user feedback for product insights."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(foreign_key="user.id")
+    type: str  # Bug, Confusing, Feature Request, Loved it, Other
+    message: str
+    rating: Optional[int] = Field(default=None)
+    context: Dict[Any, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    page: Optional[str] = Field(default=None)
+    feature: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # --- DB Initialization ---
 sqlite_file_name = "resume_data.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
@@ -123,7 +156,12 @@ if db_mode == "remote" and database_url:
 else:
     engine_url = sqlite_url
 
-engine = create_engine(engine_url, echo=False)
+engine = create_engine(
+    engine_url, 
+    echo=False, 
+    pool_pre_ping=True, 
+    pool_recycle=300
+)
 
 def init_db():
     SQLModel.metadata.create_all(engine)

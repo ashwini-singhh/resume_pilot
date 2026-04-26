@@ -6,6 +6,8 @@ import MasterProfile from '../components/MasterProfile';
 import ResumePreview from '../components/ResumePreview';
 import UpgradeModal from '../components/UpgradeModal';
 import JDPipeline from '../components/JDPipeline';
+import GithubFlow from '../components/GithubFlow';
+import InterviewPanel from '../components/InterviewPanel';
 import * as api from '../lib/api';
 import { supabase } from '../lib/supabaseClient';
 
@@ -40,6 +42,7 @@ export default function AppIndex() {
   const [profiles, setProfiles] = useState([]);
   const [activeContextId, setActiveContextId] = useState(null);
   const [githubSyncData, setGithubSyncData] = useState({ fetchedData: null, projects: [], newSkills: [] });
+  const [showInterview, setShowInterview] = useState(false);
 
   const [userStatus, setUserStatus] = useState({ subscription_status: 'free', free_runs_remaining: 5 });
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -264,6 +267,10 @@ export default function AppIndex() {
             onSwitchProfile={handleSwitchProfile}
             onNewProfile={handleNewProfile}
             onDeleteProfile={handleDeleteProfile}
+            setActivePage={setActivePage}
+            profile={profile}
+            setProfile={setProfile}
+            onOpenInterview={() => setShowInterview(true)}
           />
           <MasterProfile 
              profile={profile} 
@@ -282,9 +289,24 @@ export default function AppIndex() {
         </div>
       )}
 
+      {activePage === 'github' && (
+        <div style={{ padding: '40px', minHeight: '80vh' }}>
+          <GithubFlow 
+            userId={user?.id} 
+            contextId={activeContextId} 
+            onComplete={(newProfile) => {
+              setProfile(newProfile);
+              setActivePage('dashboard');
+              // Trigger diagnostic refresh since data changed
+              api.runGlobalDiagnostic({ userId: user.id, contextId: activeContextId });
+            }} 
+          />
+        </div>
+      )}
+
       {activePage === 'jd' && (
         <div style={{ padding: '32px 40px', minHeight: '80vh' }}>
-          <JDPipeline userId={user?.id} contextId={activeContextId} />
+          <JDPipeline userId={user?.id} contextId={activeContextId} profile={profile} />
         </div>
       )}
 
@@ -370,17 +392,10 @@ export default function AppIndex() {
               <div className="flex-column gap-2">
                 <button 
                   className="btn" 
-                  style={{borderColor: '#ef4444', color: '#ef4444', fontWeight: 600, width: '100%', marginBottom: '8px', background: 'transparent'}}
+                  style={{borderColor: '#ef4444', color: '#ef4444', fontWeight: 600, width: '100%', background: 'transparent'}}
                   onClick={handleClearData}
                 >
                   Clear All Data
-                </button>
-                <button 
-                  className="btn" 
-                  style={{background: '#ef4444', color: 'white', border: 'none', fontWeight: 600, width: '100%'}}
-                  onClick={handleDeleteAccount}
-                >
-                  Delete Account
                 </button>
               </div>
             </div>
@@ -400,6 +415,18 @@ export default function AppIndex() {
              setShowUpgradeModal(false);
              const status = await api.getUserStatus(user.id);
              setUserStatus(status);
+          }}
+        />
+      )}
+
+      {showInterview && (
+        <InterviewPanel 
+          userId={user?.id}
+          contextId={activeContextId}
+          profile={profile}
+          onClose={() => setShowInterview(false)}
+          onMergeSuccess={(newProf) => {
+            setProfile(newProf);
           }}
         />
       )}

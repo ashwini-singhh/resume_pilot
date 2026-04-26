@@ -5,40 +5,34 @@ const easeOut = [0.16, 1, 0.3, 1];
 
 const features = [
   {
-    icon: 'psychology',
-    title: 'Understands You Better',
-    desc: 'AI asks targeted questions before improving—no generic output.',
-    color: '#8b5cf6',
-  },
-  {
-    icon: 'ads_click',
-    title: 'Role-Specific Optimization',
-    desc: 'Tailor your resume for any job posting instantly with intelligent keyword mapping.',
+    icon: 'analytics',
+    title: 'Resume Score',
+    desc: 'Get an objective 0-100 score based on ATS standards and JD alignment.',
     color: '#0052FF',
   },
   {
-    icon: 'verified',
-    title: 'ATS-Optimized Output',
-    desc: 'Built to pass applicant tracking systems at top companies.',
+    icon: 'target',
+    title: 'JD Matching',
+    desc: 'Instantly see how well your skills map to specific job requirements.',
     color: '#22c55e',
   },
   {
-    icon: 'auto_fix_high',
-    title: 'Context-Aware Improvements',
-    desc: 'Uses your actual answers—not guesses—to craft compelling bullet points.',
+    icon: 'insights',
+    title: 'Section-Level Insights',
+    desc: 'Targeted feedback on experience, skills, and summary sections.',
+    color: '#8b5cf6',
+  },
+  {
+    icon: 'psychology',
+    title: 'AI Questioning',
+    desc: 'AI asks clarifying questions to uncover your hidden metrics and impact.',
     color: '#f59e0b',
   },
   {
-    icon: 'bolt',
-    title: 'Lightning Fast',
-    desc: 'From upload to optimized resume in minutes, not hours.',
+    icon: 'verified',
+    title: 'ATS Optimization',
+    desc: 'Built to ensure your resume passes through screening bots at top firms.',
     color: '#ec4899',
-  },
-  {
-    icon: 'folder_copy',
-    title: 'Manage Multiple Resumes',
-    desc: 'Keep different resumes for different roles and companies, all in one place.',
-    color: '#14b8a6',
   },
 ];
 

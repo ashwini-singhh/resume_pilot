@@ -29,7 +29,7 @@ export default function LandingNav() {
           <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         <span style={{ fontFamily: 'Calistoga, serif', fontSize: 20, letterSpacing: '-0.02em', color: 'var(--foreground)' }}>
-          ResumePilot
+          ResumeSailor
         </span>
       </div>
       <button

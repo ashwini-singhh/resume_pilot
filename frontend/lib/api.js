@@ -4,7 +4,13 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').re
  * Standardized fetch helper to handle AppResponse structure
  */
 async function request(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, options);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, options);
+  } catch (err) {
+    console.error('Fetch error:', err);
+    throw new Error('Backend server is unreachable. Please ensure it is running at ' + API_BASE);
+  }
 
   if (res.status === 402) {
     // Dispatch global event so the UI can pop up the Upgrade modal
@@ -243,6 +249,28 @@ export async function executeExtractionPipeline(userId, contextId, file, text, c
 }
 
 
+export async function fetchGithubRepos(githubUrl, token = null) {
+  const params = new URLSearchParams({ url: githubUrl });
+  if (token) params.append('token', token);
+  return request(`/github/repos?${params}`);
+}
+
+export async function mergeGithubRepos({ userId, contextId, githubUrl, selectedRepoNames, token = null }) {
+  return request('/github/merge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      context_id: contextId,
+      github_url: githubUrl,
+      selected_repo_names: selectedRepoNames,
+      token
+    }),
+  });
+}
+
+
+
 // ── JD Matching Pipeline ────────────────────────────────────────────────────
 
 export async function analyzeJD({ jd_text, jd_title, jd_company, user_id, context_id }) {
@@ -302,5 +330,30 @@ export async function createCheckoutSession(userId, amount) {
 
 export async function getUserStatus(userId) {
   return request(`/user/status/${userId}`, { method: 'GET' });
+}
+
+export async function cloneProfile({ userId, profileName, profileData }) {
+  return request('/profiles/clone', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      profile_name: profileName,
+      profile_data: profileData
+    }),
+  });
+}
+
+export async function interviewTurn({ userId, contextId, sectionType, chatHistory }) {
+  return request('/interview/turn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      context_id: contextId,
+      section_type: sectionType,
+      chat_history: chatHistory
+    }),
+  });
 }
 
