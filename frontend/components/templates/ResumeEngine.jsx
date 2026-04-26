@@ -134,7 +134,7 @@ export default function ResumeEngine({
             <SectionTitle title="Experience" />
             {profile.experience.map((e, idx) => {
               const eid = `exp_${idx}`;
-              const isHidden = (profile.hidden_entries || []).includes(eid);
+              const isHidden = (profile.hidden_entries || []).includes(eid) || e.hidden;
               if (isLivePreview && isHidden) return null;
 
               return (
@@ -172,7 +172,7 @@ export default function ResumeEngine({
 
                   {!isHidden && (e.projects || []).map((proj, pIdx) => {
                     const pid = `${eid}_proj_${pIdx}`;
-                    const isHiddenProj = (profile.hidden_entries || []).includes(pid);
+                    const isHiddenProj = (profile.hidden_entries || []).includes(pid) || proj.hidden;
                     if (isLivePreview && isHiddenProj) return null;
 
                     return (
@@ -212,7 +212,7 @@ export default function ResumeEngine({
             <SectionTitle title="Education" />
             {profile.education.map((e, idx) => {
               const eid = `edu_${idx}`;
-              const isHidden = (profile.hidden_entries || []).includes(eid);
+              const isHidden = (profile.hidden_entries || []).includes(eid) || e.hidden;
               if (isLivePreview && isHidden) return null;
 
               return (
@@ -244,7 +244,7 @@ export default function ResumeEngine({
             <SectionTitle title="Projects" />
             {profile.projects.map((p, idx) => {
               const eid = `proj_${idx}`;
-              const isHidden = (profile.hidden_entries || []).includes(eid);
+              const isHidden = (profile.hidden_entries || []).includes(eid) || p.hidden;
               if (isLivePreview && isHidden) return null;
 
               return (
@@ -291,7 +291,7 @@ export default function ResumeEngine({
             <SectionTitle title="Achievements" />
             {profile.achievements.map((a, idx) => {
               const eid = `achieve_${idx}`;
-              const isHidden = (profile.hidden_entries || []).includes(eid);
+              const isHidden = (profile.hidden_entries || []).includes(eid) || a.hidden;
               if (isLivePreview && isHidden) return null;
 
               return (

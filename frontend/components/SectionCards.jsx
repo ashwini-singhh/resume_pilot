@@ -375,11 +375,28 @@ export function WorkExperienceCard({ experience = [], userContext, userId, conte
             marginBottom: '20px',
             paddingBottom: idx < experience.length - 1 ? '20px' : 0,
             borderBottom: idx < experience.length - 1 ? '1px solid var(--border)' : 'none',
+            opacity: exp.hidden ? 0.5 : 1
           }}>
-            <div className="flex-between">
-              <div>
-                <strong style={{color: 'var(--foreground)'}}>{exp.title}</strong><br/>
-                <span style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>{exp.company}</span>
+            <div className="flex-between" style={{alignItems: 'flex-start'}}>
+              <div style={{display: 'flex', gap: '8px', alignItems: 'flex-start'}}>
+                <button 
+                  className="btn-icon-only" 
+                  onClick={() => {
+                    const next = [...experience];
+                    next[idx] = { ...next[idx], hidden: !next[idx].hidden };
+                    onChange({ experience: next });
+                  }}
+                  title={exp.hidden ? "Show in Resume" : "Hide from Resume"}
+                  style={{marginTop: '2px', color: exp.hidden ? 'var(--muted-foreground)' : 'var(--accent)'}}
+                >
+                  <span className="mat-icon" style={{fontSize: '18px'}}>
+                    {exp.hidden ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+                <div>
+                  <strong style={{color: 'var(--foreground)'}}>{exp.title}</strong><br/>
+                  <span style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>{exp.company}</span>
+                </div>
               </div>
               <div style={{fontSize: '11px', color: 'var(--muted-foreground)'}}>{exp.period}</div>
             </div>
@@ -541,9 +558,26 @@ export function ProjectsCard({ projects = [], userContext, userId, contextId, is
             marginBottom: '16px',
             paddingBottom: idx < projects.length - 1 ? '16px' : 0,
             borderBottom: idx < projects.length - 1 ? '1px solid var(--border)' : 'none',
+            opacity: proj.hidden ? 0.5 : 1
           }}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px'}}>
-              <div style={{fontWeight: 600, color: '#dc2626', fontSize: '13px'}}>{proj.name}</div>
+              <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                <button 
+                  className="btn-icon-only" 
+                  onClick={() => {
+                    const next = [...projects];
+                    next[idx] = { ...next[idx], hidden: !next[idx].hidden };
+                    onChange({ projects: next });
+                  }}
+                  title={proj.hidden ? "Show in Resume" : "Hide from Resume"}
+                  style={{color: proj.hidden ? 'var(--muted-foreground)' : 'var(--accent)'}}
+                >
+                  <span className="mat-icon" style={{fontSize: '18px'}}>
+                    {proj.hidden ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+                <div style={{fontWeight: 600, color: '#dc2626', fontSize: '13px'}}>{proj.name}</div>
+              </div>
               {proj.live_link && <div style={{fontSize: '10px', color: 'var(--accent)'}}>🔗 {proj.live_link}</div>}
             </div>
 
@@ -623,12 +657,25 @@ export function EducationCard({ education = [], isEditing, onEditToggle, onChang
       </div>
       {education.length === 0 && <p style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>No education entries.</p>}
       {education.map((edu, idx) => (
-        <div key={idx} className="flex-between" style={{marginTop: '8px'}}>
-          <div>
-            <strong style={{color: 'var(--foreground)'}}>{edu.degree}</strong><br/>
-            <span style={{fontSize: '12px', color: 'var(--muted-foreground)'}}>{edu.school}</span>
+        <div key={idx} style={{marginBottom: '12px', opacity: edu.hidden ? 0.5 : 1}}>
+          <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+            <button 
+              className="btn-icon-only" 
+              onClick={() => {
+                const next = [...education];
+                next[idx] = { ...next[idx], hidden: !next[idx].hidden };
+                onChange({ education: next });
+              }}
+              title={edu.hidden ? "Show in Resume" : "Hide from Resume"}
+              style={{color: edu.hidden ? 'var(--muted-foreground)' : 'var(--accent)'}}
+            >
+              <span className="mat-icon" style={{fontSize: '18px'}}>
+                {edu.hidden ? 'visibility_off' : 'visibility'}
+              </span>
+            </button>
+            <strong style={{color: 'var(--foreground)'}}>{edu.degree}</strong>
           </div>
-          <div style={{fontSize: '11px', color: 'var(--muted-foreground)'}}>{edu.period}</div>
+          <div style={{fontSize: '12px', color: 'var(--muted-foreground)', marginLeft: '26px'}}>{edu.school} | {edu.period}</div>
         </div>
       ))}
     </div>
@@ -736,7 +783,7 @@ export function AchievementsCard({
   contextId,
   userContext
 }) {
-  const [tempData, setTempData] = useState(achievements.join('\n'));
+  const [tempData, setTempData] = useState(achievements.map(a => typeof a === 'string' ? { text: a, hidden: false } : a));
   const [improvingEntry, setImprovingEntry] = useState(null);
 
   if (improvingEntry) {
@@ -767,15 +814,15 @@ export function AchievementsCard({
         <label className="form-label">Achievements / Awards (One per line)</label>
         <textarea 
            rows="6" 
-           value={tempData} 
-           onChange={e => setTempData(e.target.value)} 
+           value={tempData.map(a => typeof a === 'string' ? a : a.text).join('\n')} 
+           onChange={e => setTempData(e.target.value.split('\n').map(l => ({ text: l, hidden: false })))} 
            style={{fontSize: '13px'}}
            placeholder="AWS Certified Solution Architect&#10;3-star Leetcode Problem Solver"
         />
         <div className="flex-between" style={{marginTop: '16px'}}>
-          <button className="btn" onClick={() => { setTempData(achievements.join('\n')); onEditToggle(null); }}>Cancel</button>
+          <button className="btn" onClick={() => { setTempData(achievements.map(a => typeof a === 'string' ? { text: a, hidden: false } : a)); onEditToggle(null); }}>Cancel</button>
           <button className="btn btn-primary" onClick={() => { 
-            const list = tempData.split('\n').map(l => l.trim()).filter(l => l);
+            const list = tempData.filter(l => l.text.trim()).map(l => ({...l, text: l.text.trim()}));
             onChange({ achievements: list }); 
             onEditToggle(null); 
           }}>Save</button>
@@ -797,14 +844,31 @@ export function AchievementsCard({
         score={score ?? null}
         loading={score === undefined && achievements.length > 0}
         reasons={reasons}
-        onImprove={() => setImprovingEntry({ entry: { bullets: achievements }, entryId: 'achievements' })}
+        onImprove={() => setImprovingEntry({ entry: { bullets: achievements.map(a => typeof a === 'string' ? a : a.text) }, entryId: 'achievements' })}
       />
 
       {achievements.length === 0 && <p style={{fontSize: '12px', color: 'var(--muted-foreground)', marginTop: '8px'}}>No achievements.</p>}
       <div style={{ marginTop: '10px' }}>
-        {achievements.map((c, idx) => (
-          <div key={idx} style={{fontSize: '12px', color: 'var(--foreground)', marginBottom: '4px'}}>• {c}</div>
-        ))}
+        {achievements.map((a, idx) => {
+          const text = typeof a === 'string' ? a : a.text;
+          const hidden = typeof a === 'string' ? false : a.hidden;
+          return (
+            <div key={idx} style={{fontSize: '12px', color: 'var(--foreground)', marginBottom: '4px', display: 'flex', alignItems: 'center', opacity: hidden ? 0.5 : 1}}>
+              <button 
+                className="btn-icon-only" 
+                onClick={() => {
+                  const next = achievements.map(x => (typeof x === 'string' ? { text: x, hidden: false } : x));
+                  next[idx].hidden = !next[idx].hidden;
+                  onChange({ achievements: next });
+                }}
+                style={{color: hidden ? 'var(--muted-foreground)' : 'var(--accent)', padding: 0, width: '20px', height: '20px'}}
+              >
+                <span className="mat-icon" style={{fontSize: '14px'}}>{hidden ? 'visibility_off' : 'visibility'}</span>
+              </button>
+              • {text}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -102,7 +102,7 @@ export default function Standard({
         return (
           <div key={title}>
             <div style={sectionHeaderStyle}>Experience</div>
-            {experience.map((exp, idx) => (
+            {experience.filter(e => !e.hidden).map((exp, idx) => (
               <div key={idx} style={{ marginBottom: spacing.blockGap }}>
                 <div style={entryHeaderStyle}>
                   <span>{exp.title}</span>
@@ -145,7 +145,7 @@ export default function Standard({
         return (
           <div key={title}>
             <div style={sectionHeaderStyle}>Projects</div>
-            {projects.map((proj, idx) => (
+            {projects.filter(p => !p.hidden).map((proj, idx) => (
               <div key={idx} style={{ marginBottom: spacing.blockGap }}>
                 <div style={entryHeaderStyle}>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline' }}>
@@ -176,7 +176,7 @@ export default function Standard({
         return (
           <div key={title}>
             <div style={sectionHeaderStyle}>Education</div>
-            {education.map((edu, idx) => (
+            {education.filter(e => !e.hidden).map((edu, idx) => (
               <div key={idx} style={{ marginBottom: spacing.blockGap }}>
                 <div style={entryHeaderStyle}>
                   <span>{edu.school}</span>
@@ -212,12 +212,15 @@ export default function Standard({
           <div key={title}>
             <div style={sectionHeaderStyle}>Achievements</div>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {achievements.map((ach, idx) => (
-                <li key={idx} style={bulletStyle}>
-                  <span style={{ position: 'absolute', left: 0 }}>•</span>
-                  {cleanBullet(ach)}
-                </li>
-              ))}
+              {achievements.filter(a => !(typeof a === 'object' && a.hidden)).map((ach, idx) => {
+                const text = typeof ach === 'string' ? ach : ach.text;
+                return (
+                  <li key={idx} style={bulletStyle}>
+                    <span style={{ position: 'absolute', left: 0 }}>•</span>
+                    {cleanBullet(text)}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         );
