@@ -71,25 +71,25 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
     const parts = path.split('.');
     let current = updated;
     for (let i = 0; i < parts.length - 1; i++) {
-        // Handle array indices and object keys
-        current = current[parts[i]];
+      // Handle array indices and object keys
+      current = current[parts[i]];
     }
     current[parts[parts.length - 1]] = value;
     setPreviewProfile(updated);
   };
 
   return (
-    <div className={!isLivePreview ? "dashboard-container" : ""} style={!isLivePreview ? {maxWidth: '1200px'} : { height: '100%' }}>
-      
+    <div className={!isLivePreview ? "dashboard-container" : ""} style={!isLivePreview ? { maxWidth: '1200px' } : { height: '100%' }}>
+
       {/* Settings / Control Panel */}
       {!isLivePreview && (
-        <div className="sidebar" style={{width: '320px', display: 'flex', flexDirection: 'column'}}>
-          
+        <div className="sidebar" style={{ width: '320px', display: 'flex', flexDirection: 'column' }}>
+
           {/* Tab Navigation */}
           <div style={{ display: 'flex', background: 'var(--muted)', borderRadius: '12px', padding: '4px', marginBottom: '24px' }}>
-            <button 
+            <button
               onClick={() => setActiveTab('styling')}
-              style={{ 
+              style={{
                 flex: 1, padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
                 background: activeTab === 'styling' ? 'var(--card)' : 'transparent',
                 color: activeTab === 'styling' ? 'var(--foreground)' : 'var(--muted-foreground)',
@@ -99,9 +99,9 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
             >
               Styling
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('templates')}
-              style={{ 
+              style={{
                 flex: 1, padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
                 background: activeTab === 'templates' ? 'var(--card)' : 'transparent',
                 color: activeTab === 'templates' ? 'var(--foreground)' : 'var(--muted-foreground)',
@@ -116,10 +116,10 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
           <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
             {activeTab === 'styling' ? (
               <>
-                <h3 style={{marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                  <span className="mat-icon" style={{color: 'var(--muted-foreground)'}}>palette</span> Font Styling
+                <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="mat-icon" style={{ color: 'var(--muted-foreground)' }}>palette</span> Font Styling
                 </h3>
-        
+
                 <label className="form-label">Font Family</label>
                 <select value={fontFam} onChange={e => setFontFam(e.target.value)}>
                   <option>Inter (Modern)</option>
@@ -128,20 +128,20 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                   <option>Georgia</option>
                 </select>
 
-                <div className="flex-between" style={{marginBottom: '16px'}}>
+                <div className="flex-between" style={{ marginBottom: '16px' }}>
                   <label className="form-label">Font Size</label>
-                  <span style={{fontSize: '12px'}}>{fontSz}pt</span>
+                  <span style={{ fontSize: '12px' }}>{fontSz}pt</span>
                 </div>
-                <input 
-                  type="range" 
-                  min="9" max="14" 
-                  value={fontSz} 
-                  onChange={e => setFontSz(Number(e.target.value))} 
-                  style={{width: '100%', marginBottom: '24px'}}
+                <input
+                  type="range"
+                  min="9" max="14"
+                  value={fontSz}
+                  onChange={e => setFontSz(Number(e.target.value))}
+                  style={{ width: '100%', marginBottom: '24px' }}
                 />
 
-                <h3 style={{marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                  <span className="mat-icon" style={{color: 'var(--muted-foreground)'}}>format_bold</span> Text Formatting
+                <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="mat-icon" style={{ color: 'var(--muted-foreground)' }}>format_bold</span> Text Formatting
                 </h3>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
                   {[
@@ -157,97 +157,97 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                         document.execCommand(tool.cmd, false, null);
                       }}
                       className="btn"
-                      style={{ 
-                        flex: 1, 
-                        flexDirection: 'column', 
-                        padding: '12px 0', 
+                      style={{
+                        flex: 1,
+                        flexDirection: 'column',
+                        padding: '12px 0',
                         gap: '4px',
                         background: 'var(--card)',
                         border: '1px solid var(--border)'
                       }}
                       title={tool.cmd}
                     >
-                      <span className="mat-icon" style={{fontSize: '20px'}}>{tool.icon}</span>
-                      <span style={{fontSize: '10px', fontWeight: 600}}>{tool.label}</span>
+                      <span className="mat-icon" style={{ fontSize: '20px' }}>{tool.icon}</span>
+                      <span style={{ fontSize: '10px', fontWeight: 600 }}>{tool.label}</span>
                     </button>
                   ))}
                 </div>
 
-                <div className="flex-between" style={{marginBottom: '16px'}}>
+                <div className="flex-between" style={{ marginBottom: '16px' }}>
                   <label className="form-label">Line Spacing</label>
-                  <span style={{fontSize: '12px'}}>{lineHt}</span>
+                  <span style={{ fontSize: '12px' }}>{lineHt}</span>
                 </div>
-                <input 
-                  type="range" 
+                <input
+                  type="range"
                   min="1" max="2.5" step="0.1"
-                  value={lineHt} 
-                  onChange={e => setLineHt(Number(e.target.value))} 
-                  style={{width: '100%', marginBottom: '24px'}}
+                  value={lineHt}
+                  onChange={e => setLineHt(Number(e.target.value))}
+                  style={{ width: '100%', marginBottom: '24px' }}
                 />
 
-                <label style={{display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '24px'}}>
-                  <input type="checkbox" checked={fitPage} onChange={e => setFitPage(e.target.checked)} style={{width: 'auto', marginBottom: 0}} />
-                   Fit to one page
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '24px' }}>
+                  <input type="checkbox" checked={fitPage} onChange={e => setFitPage(e.target.checked)} style={{ width: 'auto', marginBottom: 0 }} />
+                  Fit to one page
                 </label>
 
-                <div style={{borderBottom: '1px solid var(--border)', margin: '24px 0'}}></div>
-                
-                <h3 style={{marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                  <span className="mat-icon" style={{color: 'var(--muted-foreground)'}}>brush</span> Dynamic Styling
+                <div style={{ borderBottom: '1px solid var(--border)', margin: '24px 0' }}></div>
+
+                <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="mat-icon" style={{ color: 'var(--muted-foreground)' }}>brush</span> Dynamic Styling
                 </h3>
 
                 <label className="form-label">Accent Color</label>
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-                  <input 
-                    type="color" 
-                    value={accentColor} 
+                  <input
+                    type="color"
+                    value={accentColor}
                     onChange={e => setAccentColor(e.target.value)}
                     style={{ width: '40px', height: '40px', padding: 0, border: 'none', background: 'none' }}
                   />
-                  <input 
-                    type="text" 
-                    value={accentColor} 
+                  <input
+                    type="text"
+                    value={accentColor}
                     onChange={e => setAccentColor(e.target.value)}
                     style={{ flex: 1, fontSize: '13px' }}
                   />
                 </div>
 
-                <div className="flex-between" style={{marginBottom: '12px'}}>
+                <div className="flex-between" style={{ marginBottom: '12px' }}>
                   <label className="form-label">Section Spacing</label>
-                  <span style={{fontSize: '11px'}}>{sectionGap}px</span>
+                  <span style={{ fontSize: '11px' }}>{sectionGap}px</span>
                 </div>
-                <input type="range" min="8" max="64" value={sectionGap} onChange={e => setSectionGap(Number(e.target.value))} style={{width: '100%', marginBottom: '16px'}} />
+                <input type="range" min="8" max="64" value={sectionGap} onChange={e => setSectionGap(Number(e.target.value))} style={{ width: '100%', marginBottom: '16px' }} />
 
-                <div className="flex-between" style={{marginBottom: '12px'}}>
+                <div className="flex-between" style={{ marginBottom: '12px' }}>
                   <label className="form-label">Entry Spacing</label>
-                  <span style={{fontSize: '11px'}}>{blockGap}px</span>
+                  <span style={{ fontSize: '11px' }}>{blockGap}px</span>
                 </div>
-                <input type="range" min="4" max="32" value={blockGap} onChange={e => setBlockGap(Number(e.target.value))} style={{width: '100%', marginBottom: '16px'}} />
+                <input type="range" min="4" max="32" value={blockGap} onChange={e => setBlockGap(Number(e.target.value))} style={{ width: '100%', marginBottom: '16px' }} />
 
-                <div className="flex-between" style={{marginBottom: '12px'}}>
+                <div className="flex-between" style={{ marginBottom: '12px' }}>
                   <label className="form-label">Page Margins</label>
-                  <span style={{fontSize: '11px'}}>{docPadding}px</span>
+                  <span style={{ fontSize: '11px' }}>{docPadding}px</span>
                 </div>
-                <input type="range" min="0" max="80" value={docPadding} onChange={e => setDocPadding(Number(e.target.value))} style={{width: '100%', marginBottom: '24px'}} />
+                <input type="range" min="0" max="80" value={docPadding} onChange={e => setDocPadding(Number(e.target.value))} style={{ width: '100%', marginBottom: '24px' }} />
 
-                <button className="btn" style={{width: '100%', gap: '8px'}} onClick={() => { 
-                   setFontFam("Inter (Modern)"); setFontSz(11); setLineHt(1.6); setFitPage(false); 
-                   setAccentColor('#2563eb'); setSectionGap(20); setBlockGap(12); setDocPadding(40);
-                   setPreviewProfile(profile);
+                <button className="btn" style={{ width: '100%', gap: '8px' }} onClick={() => {
+                  setFontFam("Inter (Modern)"); setFontSz(11); setLineHt(1.6); setFitPage(false);
+                  setAccentColor('#2563eb'); setSectionGap(20); setBlockGap(12); setDocPadding(40);
+                  setPreviewProfile(profile);
                 }}>
                   <span className="mat-icon">history</span> Reset to Master
                 </button>
 
-                <div style={{borderBottom: '1px solid var(--border)', margin: '24px 0'}}></div>
+                <div style={{ borderBottom: '1px solid var(--border)', margin: '24px 0' }}></div>
 
-                <h3 style={{marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                  <span className="mat-icon" style={{color: 'var(--muted-foreground)'}}>reorder</span> Section Order
+                <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="mat-icon" style={{ color: 'var(--muted-foreground)' }}>reorder</span> Section Order
                 </h3>
-                <p style={{fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '12px'}}>Drag items to reorder. Toggle eye to hide.</p>
-                
+                <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '12px' }}>Drag items to reorder. Toggle eye to hide.</p>
+
                 <div className="section-order-list">
                   {sectionOrder.map((sec, idx) => (
-                    <div 
+                    <div
                       key={sec}
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, idx)}
@@ -261,9 +261,9 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                         cursor: 'grab', transition: 'all 0.2s ease'
                       }}
                     >
-                      <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                        <span style={{fontWeight: 700, color: 'var(--accent)', minWidth: '18px'}}>{idx + 1}.</span>
-                        <span style={{fontWeight: 500}}>{sec}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontWeight: 700, color: 'var(--accent)', minWidth: '18px' }}>{idx + 1}.</span>
+                        <span style={{ fontWeight: 500 }}>{sec}</span>
                       </div>
                     </div>
                   ))}
@@ -271,11 +271,11 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
               </>
             ) : (
               <div className="animate-in">
-                <h3 style={{marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                  <span className="mat-icon" style={{color: 'var(--muted-foreground)'}}>auto_awesome_motion</span> Templates
+                <h3 style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="mat-icon" style={{ color: 'var(--muted-foreground)' }}>auto_awesome_motion</span> Templates
                 </h3>
                 <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '16px' }}>Preview only (does not affect saved data)</p>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {['Visual', 'Professional', 'Tech', 'Modern', 'Traditional', 'Corporate', 'Creative'].map(cat => {
                     const group = Object.entries(templateRegistry).filter(([_, cfg]) => cfg.category === cat);
@@ -285,8 +285,8 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                         <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.1em', marginBottom: '8px', paddingLeft: '4px' }}>{cat}</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           {group.map(([id, config]) => (
-                            <div 
-                              key={id} 
+                            <div
+                              key={id}
                               onClick={() => setSelectedTemplate(id)}
                               style={{
                                 padding: '10px 12px', borderRadius: '10px',
@@ -295,8 +295,8 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
                                 cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '10px'
                               }}
                             >
-                              <div style={{ 
-                                width: '32px', height: '32px', borderRadius: '8px', 
+                              <div style={{
+                                width: '32px', height: '32px', borderRadius: '8px',
                                 background: selectedTemplate === id ? 'var(--accent)' : 'var(--muted)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center'
                               }}>
@@ -317,43 +317,43 @@ export default function ResumePreview({ profile, onOpenUpload, onEditTab, onUpda
             )}
           </div>
 
-          <div style={{borderBottom: '1px solid var(--border)', margin: '24px 0'}}></div>
-          <button className="btn btn-primary" style={{width: '100%', gap: '8px'}} onClick={onOpenUpload}>
+          <div style={{ borderBottom: '1px solid var(--border)', margin: '24px 0' }}></div>
+          <button className="btn btn-primary" style={{ width: '100%', gap: '8px' }} onClick={onOpenUpload}>
             <span className="mat-icon">auto_awesome</span> Upload & Parse
           </button>
         </div>
       )}
 
       {/* Actual Rendered Document Panel */}
-      <div className="main-column" style={{background: isLivePreview ? 'transparent' : '#0b1120', padding: isLivePreview ? '4px' : '32px', borderRadius: '16px', flex: 1, minWidth: 0}}>
+      <div className="main-column" style={{ background: isLivePreview ? 'transparent' : '#0b1120', padding: isLivePreview ? '4px' : '32px', borderRadius: '16px', flex: 1, minWidth: 0 }}>
         {!isLivePreview && (
           <>
-            <div className="flex-between" style={{marginBottom: '24px'}}>
-                <h2 style={{color: 'white', margin: 0}}>Resume Preview</h2>
-                <div className="flex-row gap-2">
-                  <button className="btn" onClick={onEditTab}><span className="mat-icon">edit</span> Edit</button>
-                  <button className="btn" onClick={() => alert("Cloud Sync: coming soon")}><span className="mat-icon">save</span> Save</button>
-                  <button className="btn btn-danger" onClick={() => {
-                    const count = Number(localStorage.getItem('usage_count') || 0);
-                    if (count >= 5) return alert("Monthly export limit reached! Take Premium to work on more resumes.");
-                    localStorage.setItem('usage_count', (count + 1).toString());
-                    window.print();
-                  }}>
-                    <span className="mat-icon">download</span> Export PDF
-                  </button>
-                </div>
+            <div className="flex-between" style={{ marginBottom: '24px' }}>
+              <h2 style={{ color: 'white', margin: 0 }}>Resume Preview</h2>
+              <div className="flex-row gap-2">
+                <button className="btn" onClick={onEditTab}><span className="mat-icon">edit</span> Edit</button>
+                <button className="btn" onClick={() => alert("Cloud Sync: coming soon")}><span className="mat-icon">save</span> Save</button>
+                <button className="btn btn-danger" onClick={() => {
+                  const count = Number(localStorage.getItem('usage_count') || 0);
+                  if (count >= 5) return alert("Monthly export limit reached! Take Premium to work on more resumes.");
+                  localStorage.setItem('usage_count', (count + 1).toString());
+                  window.print();
+                }}>
+                  <span className="mat-icon">download</span> Export PDF
+                </button>
+              </div>
             </div>
 
-            <div className="info-banner" style={{background: 'rgba(5b, 130, 246, 0.1)', color: '#93c5fd', borderColor: 'rgba(59,130,246,0.3)'}}>
-              <span className="mat-icon" style={{color: '#3b82f6'}}>info</span>
+            <div className="info-banner" style={{ background: 'rgba(5b, 130, 246, 0.1)', color: '#93c5fd', borderColor: 'rgba(59,130,246,0.3)' }}>
+              <span className="mat-icon" style={{ color: '#3b82f6' }}>info</span>
               This format is used when your resume is exported.
             </div>
           </>
         )}
 
-        <div className="resume-doc-container" style={{transformOrigin: 'top center', overflow: isLivePreview ? 'hidden' : undefined, borderRadius: isLivePreview ? '12px' : 0}}>
-          <ActiveTemplate 
-            profile={previewProfile} 
+        <div className="resume-doc-container" style={{ transformOrigin: 'top center', overflow: isLivePreview ? 'hidden' : undefined, borderRadius: isLivePreview ? '12px' : 0 }}>
+          <ActiveTemplate
+            profile={previewProfile}
             sectionOrder={sectionOrder}
             scale={scale}
             lineHt={lineHt}

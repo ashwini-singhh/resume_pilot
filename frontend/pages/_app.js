@@ -4,6 +4,7 @@ import Head from 'next/head';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
+import { Analytics } from '@vercel/analytics/react';
 import * as api from '../lib/api';
 
 // Pages that don't require authentication
@@ -92,6 +93,7 @@ function MyApp({ Component, pageProps }) {
         <link rel="icon" type="image/png" href="/favicon.png" />
       </Head>
       <Component {...pageProps} />
+      <Analytics />
     </>
   );
 }

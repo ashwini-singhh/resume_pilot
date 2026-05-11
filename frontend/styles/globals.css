@@ -1313,22 +1313,38 @@ html {
 @media print {
   @page {
     margin: 0; /* Removes browser headers (date, URL, etc.) */
+    size: A4;
   }
   body {
     background: white !important;
     padding: 0 !important;
     margin: 0 !important;
   }
-  .navbar-container, .sidebar, .sidebar-label-divider, .info-banner, .flex-between button, .hide-entry-btn, .section-badge {
+
+  /* Hide ALL non-resume UI chrome */
+  .navbar-container,
+  .sidebar,
+  .sidebar-label-divider,
+  .info-banner,
+  .hide-entry-btn,
+  .section-badge,
+  .flex-between,
+  .preview-header {
     display: none !important;
   }
+
+  /* Remove all layout spacing from wrapper */
   .dashboard-container {
     padding: 0 !important;
     margin: 0 !important;
+    gap: 0 !important;
     max-width: none !important;
     display: block !important;
     height: auto !important;
+    width: 100% !important;
   }
+
+  /* Strip dark background and spacing from the document panel */
   .main-column {
     padding: 0 !important;
     background: none !important;
@@ -1336,21 +1352,27 @@ html {
     display: block !important;
     width: 100% !important;
   }
+
+  /* Ensure the resume doc container takes full width */
   .resume-doc-container {
     padding: 0 !important;
     margin: 0 !important;
     transform: none !important;
     display: block !important;
     width: 100% !important;
+    overflow: visible !important;
   }
+
+  /* The actual document — clean page output */
   .resume-doc {
     box-shadow: none !important;
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
-    padding: 20mm !important; /* Standard print margin */
+    padding: 15mm 20mm !important;
     border: none !important;
     min-height: 0 !important;
+    border-radius: 0 !important;
   }
 }
 
